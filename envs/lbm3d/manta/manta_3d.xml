@@ -1,0 +1,160 @@
+<mujoco model="MantaRay3D_Swimmer">
+    <!--
+    Manta Ray 3D Robot for LBM-MuJoCo Coupled Simulation
+    
+    Structure:
+      body (freejoint, 6DOF root)
+        wing_root_R/L (1DOF: flap pitch around Y-axis)
+          wing_mid_R/L (2DOF: flap + twist)
+            wing_tip_R/L (2DOF: flap + twist)
+        tail (1DOF: yaw around Z-axis)
+        cephalic_fin_R/L (fixed)
+    
+    Total actuators: 2*(1+2+2) + 1 = 11 DOF
+    Coordinate: X=lateral, Y=forward, Z=up
+    -->
+
+    <compiler angle="degree" inertiafromgeom="true" meshdir="meshes/"/>
+    <option timestep="0.01" gravity="0 0 0" integrator="RK4"/>
+
+    <default>
+        <joint damping="0.60" stiffness="0" armature="0.12"/>
+        <motor ctrlrange="-1 1" ctrllimited="true"/>
+        <geom solref="0.002 1" solimp="0.9 0.95 0.001"/>
+    </default>
+
+    <asset>
+        <material name="body_mat"      rgba="0.22 0.38 0.55 1"/>
+        <material name="wing_root_mat" rgba="0.28 0.55 0.75 1"/>
+        <material name="wing_mid_mat"  rgba="0.35 0.65 0.85 1"/>
+        <material name="wing_tip_mat"  rgba="0.45 0.75 0.92 1"/>
+        <material name="tail_mat"      rgba="0.45 0.45 0.45 1"/>
+
+        <mesh name="body_mesh"        file="manta_body.stl"           scale="2 2 2"/>
+        <mesh name="wing_root_R_mesh" file="manta_wing_root.stl"      scale="2 2 2"/>
+        <mesh name="wing_mid_R_mesh"  file="manta_wing_mid.stl"       scale="2 2 2"/>
+        <mesh name="wing_tip_R_mesh"  file="manta_wing_tip.stl"       scale="2 2 2"/>
+        <mesh name="wing_root_L_mesh" file="manta_wing_root_L.stl"    scale="2 2 2"/>
+        <mesh name="wing_mid_L_mesh"  file="manta_wing_mid_L.stl"     scale="2 2 2"/>
+        <mesh name="wing_tip_L_mesh"  file="manta_wing_tip_L.stl"     scale="2 2 2"/>
+        <mesh name="tail_mesh"        file="manta_tail.stl"           scale="2 2 2"/>
+    </asset>
+
+    <worldbody>
+        <body name="body" pos="0 0 0">
+            <freejoint name="root_joint"/>
+
+            <geom name="body_geom" type="mesh" mesh="body_mesh"
+                  material="body_mat" density="4500"/>
+
+
+            <!-- ============ RIGHT WING ============ -->
+            <!-- Wing Root R: attaches at body right side, chest area -->
+            <body name="wing_root_R" pos="0.040 0.016 0">
+                <!-- 1 DOF: flap (pitch around Y-axis) -->
+                <joint name="wr_R_flap" type="hinge" axis="0 1 0"
+                       limited="true" range="-45 45"/>
+
+                <geom name="wr_R_geom" type="mesh" mesh="wing_root_R_mesh"
+                      material="wing_root_mat" density="3000"/>
+
+
+                <!-- Wing Mid R -->
+                <body name="wing_mid_R" pos="0.050 -0.012 0">
+                    <!-- 2 DOFs: flap + twist -->
+                    <joint name="wm_R_flap" type="hinge" axis="0 1 0"
+                           limited="true" range="-50 50"/>
+                    <joint name="wm_R_twist" type="hinge" axis="1 0 0"
+                           limited="true" range="-25 25"/>
+
+                    <geom name="wm_R_geom" type="mesh" mesh="wing_mid_R_mesh"
+                          material="wing_mid_mat" density="2200"/>
+
+
+                    <!-- Wing Tip R -->
+                    <body name="wing_tip_R" pos="0.050 -0.018 0">
+                        <joint name="wt_R_flap" type="hinge" axis="0 1 0"
+                               limited="true" range="-55 55"/>
+                        <joint name="wt_R_twist" type="hinge" axis="1 0 0"
+                               limited="true" range="-30 30"/>
+
+                        <geom name="wt_R_geom" type="mesh" mesh="wing_tip_R_mesh"
+                              material="wing_tip_mat" density="1500"/>
+
+                    </body>
+                </body>
+            </body>
+
+            <!-- ============ LEFT WING ============ -->
+            <body name="wing_root_L" pos="-0.040 0.016 0">
+                <joint name="wr_L_flap" type="hinge" axis="0 1 0"
+                       limited="true" range="-45 45"/>
+
+                <geom name="wr_L_geom" type="mesh" mesh="wing_root_L_mesh"
+                      material="wing_root_mat" density="3000"/>
+
+                <body name="wing_mid_L" pos="-0.050 -0.012 0">
+                    <joint name="wm_L_flap" type="hinge" axis="0 1 0"
+                           limited="true" range="-50 50"/>
+                    <joint name="wm_L_twist" type="hinge" axis="1 0 0"
+                           limited="true" range="-25 25"/>
+
+                    <geom name="wm_L_geom" type="mesh" mesh="wing_mid_L_mesh"
+                          material="wing_mid_mat" density="2200"/>
+
+                    <body name="wing_tip_L" pos="-0.050 -0.018 0">
+                        <joint name="wt_L_flap" type="hinge" axis="0 1 0"
+                               limited="true" range="-55 55"/>
+                        <joint name="wt_L_twist" type="hinge" axis="1 0 0"
+                               limited="true" range="-30 30"/>
+
+                        <geom name="wt_L_geom" type="mesh" mesh="wing_tip_L_mesh"
+                              material="wing_tip_mat" density="1500"/>
+                    </body>
+                </body>
+            </body>
+
+            <!-- ============ TAIL ============ -->
+            <body name="tail" pos="0 -0.086 0">
+                <joint name="tail_yaw" type="hinge" axis="0 0 1"
+                       limited="true" range="-40 40"/>
+
+                <geom name="tail_geom" type="mesh" mesh="tail_mesh"
+                      material="tail_mat" density="1800"/>
+
+            </body>
+        </body>
+
+        <light directional="true" diffuse="0.9 0.9 0.9" pos="0 0 3" dir="0 0 -1"/>
+    </worldbody>
+
+    <actuator>
+        <!-- Right wing: 1+2+2 = 5 DOFs -->
+        <position name="pos_wr_R_flap"  joint="wr_R_flap"  kp="1.8" kv="0.25"
+                  ctrlrange="-0.785 0.785" forcerange="-1.2 1.2"/>
+        <position name="pos_wm_R_flap"  joint="wm_R_flap"  kp="1.3" kv="0.20"
+                  ctrlrange="-0.873 0.873" forcerange="-0.9 0.9"/>
+        <position name="pos_wm_R_twist" joint="wm_R_twist" kp="0.9" kv="0.15"
+                  ctrlrange="-0.436 0.436" forcerange="-0.6 0.6"/>
+        <position name="pos_wt_R_flap"  joint="wt_R_flap"  kp="0.9" kv="0.15"
+                  ctrlrange="-0.960 0.960" forcerange="-0.6 0.6"/>
+        <position name="pos_wt_R_twist" joint="wt_R_twist" kp="0.6" kv="0.10"
+                  ctrlrange="-0.524 0.524" forcerange="-0.35 0.35"/>
+
+        <!-- Left wing: 1+2+2 = 5 DOFs -->
+        <position name="pos_wr_L_flap"  joint="wr_L_flap"  kp="1.8" kv="0.25"
+                  ctrlrange="-0.785 0.785" forcerange="-1.2 1.2"/>
+        <position name="pos_wm_L_flap"  joint="wm_L_flap"  kp="1.3" kv="0.20"
+                  ctrlrange="-0.873 0.873" forcerange="-0.9 0.9"/>
+        <position name="pos_wm_L_twist" joint="wm_L_twist" kp="0.9" kv="0.15"
+                  ctrlrange="-0.436 0.436" forcerange="-0.6 0.6"/>
+        <position name="pos_wt_L_flap"  joint="wt_L_flap"  kp="0.9" kv="0.15"
+                  ctrlrange="-0.960 0.960" forcerange="-0.6 0.6"/>
+        <position name="pos_wt_L_twist" joint="wt_L_twist" kp="0.6" kv="0.10"
+                  ctrlrange="-0.524 0.524" forcerange="-0.35 0.35"/>
+
+        <!-- Tail: 1 DOF -->
+        <position name="pos_tail_yaw" joint="tail_yaw" kp="1.1" kv="0.18"
+                  ctrlrange="-0.698 0.698" forcerange="-0.7 0.7"/>
+    </actuator>
+</mujoco>

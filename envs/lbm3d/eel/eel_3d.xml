@@ -1,0 +1,233 @@
+<mujoco model="Eel3D_RibbonFish_YawRoll">
+    <compiler angle="degree" inertiafromgeom="true"/>
+    <option timestep="0.01" gravity="0 0 0" integrator="RK4"/>
+    
+    <default>
+        <joint damping="0.2" stiffness="0" armature="0.02"/>
+        <motor ctrlrange="-1 1" ctrllimited="true"/>
+        <geom solref="0.002 1" solimp="0.9 0.95 0.001" contype="0" conaffinity="0"/>
+    </default>
+    
+    <asset>
+        <!-- Gradient colors: dark head → light tail (12 segments) -->
+        <material name="seg1_mat"  rgba="0.10 0.10 0.35 1"/>
+        <material name="seg2_mat"  rgba="0.15 0.15 0.40 1"/>
+        <material name="seg3_mat"  rgba="0.20 0.22 0.45 1"/>
+        <material name="seg4_mat"  rgba="0.25 0.30 0.50 1"/>
+        <material name="seg5_mat"  rgba="0.30 0.38 0.55 1"/>
+        <material name="seg6_mat"  rgba="0.35 0.45 0.58 1"/>
+        <material name="seg7_mat"  rgba="0.40 0.50 0.62 1"/>
+        <material name="seg8_mat"  rgba="0.48 0.56 0.66 1"/>
+        <material name="seg9_mat"  rgba="0.55 0.62 0.70 1"/>
+        <material name="seg10_mat" rgba="0.62 0.68 0.76 1"/>
+        <material name="seg11_mat" rgba="0.70 0.75 0.82 1"/>
+        <material name="seg12_mat" rgba="0.80 0.82 0.90 1"/>
+    </asset>
+    
+    <worldbody>
+        <!-- ========================================================== -->
+        <!-- 12-segment eel with tapered body shape                     -->
+        <!-- Head(A=seg1, B=seg2): small, restricted roll               -->
+        <!-- Mid-body(seg4-seg7): largest cross-section                 -->
+        <!-- Tail(seg10-seg12): smallest, flexible                      -->
+        <!-- 11 joint pairs = 22 joints total (yaw + roll)              -->
+        <!-- ========================================================== -->
+
+        <!-- ========== Segment 1 — HEAD (A) ========== -->
+        <body name="seg1" pos="0 0 0">
+            <freejoint name="root_joint"/>
+            
+            <!-- Head (A): slightly smaller than mid-body -->
+            <geom name="seg1_geom" type="box"
+                  size="0.004 0.028 0.027"
+                  pos="0 0 0"
+                  material="seg1_mat"
+                  density="5000"/>
+            
+            <!-- ========== Segment 2 — NECK (B) ========== -->
+            <!-- A-B joint: yaw ±20°, roll ±10° (very restricted for head stability) -->
+            <body name="seg2" pos="0 -0.028 0">
+                <joint name="joint1_yaw" type="hinge" axis="0 0 1" limited="true" range="-20 20"/>
+                <joint name="joint1_roll" type="hinge" axis="0 1 0" limited="true" range="-10 10"/>
+                
+                <geom name="seg2_geom" type="box"
+                      size="0.0045 0.029 0.028"
+                      pos="0 -0.029 0"
+                      material="seg2_mat"
+                      density="4800"/>
+                
+                <!-- ========== Segment 3 — FRONT BODY ========== -->
+                <body name="seg3" pos="0 -0.058 0">
+                    <joint name="joint2_yaw" type="hinge" axis="0 0 1" limited="true" range="-30 30"/>
+                    <joint name="joint2_roll" type="hinge" axis="0 1 0" limited="true" range="-20 20"/>
+                    
+                    <geom name="seg3_geom" type="box"
+                          size="0.005 0.030 0.029"
+                          pos="0 -0.030 0"
+                          material="seg3_mat"
+                          density="4600"/>
+                    
+                    <!-- ========== Segment 4 — FRONT-MID BODY ========== -->
+                    <body name="seg4" pos="0 -0.060 0">
+                        <joint name="joint3_yaw" type="hinge" axis="0 0 1" limited="true" range="-35 35"/>
+                        <joint name="joint3_roll" type="hinge" axis="0 1 0" limited="true" range="-22 22"/>
+                        
+                        <geom name="seg4_geom" type="box"
+                              size="0.005 0.031 0.030"
+                              pos="0 -0.031 0"
+                              material="seg4_mat"
+                              density="4400"/>
+                        
+                        <!-- ========== Segment 5 — MID BODY (widest) ========== -->
+                        <body name="seg5" pos="0 -0.062 0">
+                            <joint name="joint4_yaw" type="hinge" axis="0 0 1" limited="true" range="-35 35"/>
+                            <joint name="joint4_roll" type="hinge" axis="0 1 0" limited="true" range="-25 25"/>
+                            
+                            <geom name="seg5_geom" type="box"
+                                  size="0.005 0.031 0.031"
+                                  pos="0 -0.031 0"
+                                  material="seg5_mat"
+                                  density="4200"/>
+                            
+                            <!-- ========== Segment 6 — MID BODY (widest) ========== -->
+                            <body name="seg6" pos="0 -0.062 0">
+                                <joint name="joint5_yaw" type="hinge" axis="0 0 1" limited="true" range="-35 35"/>
+                                <joint name="joint5_roll" type="hinge" axis="0 1 0" limited="true" range="-25 25"/>
+                                
+                                <geom name="seg6_geom" type="box"
+                                      size="0.005 0.031 0.031"
+                                      pos="0 -0.031 0"
+                                      material="seg6_mat"
+                                      density="4000"/>
+                                
+                                <!-- ========== Segment 7 — MID-REAR BODY ========== -->
+                                <body name="seg7" pos="0 -0.062 0">
+                                    <joint name="joint6_yaw" type="hinge" axis="0 0 1" limited="true" range="-40 40"/>
+                                    <joint name="joint6_roll" type="hinge" axis="0 1 0" limited="true" range="-27 27"/>
+                                    
+                                    <geom name="seg7_geom" type="box"
+                                          size="0.005 0.031 0.030"
+                                          pos="0 -0.031 0"
+                                          material="seg7_mat"
+                                          density="3800"/>
+                                    
+                                    <!-- ========== Segment 8 — REAR BODY ========== -->
+                                    <body name="seg8" pos="0 -0.062 0">
+                                        <joint name="joint7_yaw" type="hinge" axis="0 0 1" limited="true" range="-40 40"/>
+                                        <joint name="joint7_roll" type="hinge" axis="0 1 0" limited="true" range="-27 27"/>
+                                        
+                                        <geom name="seg8_geom" type="box"
+                                              size="0.005 0.030 0.030"
+                                              pos="0 -0.030 0"
+                                              material="seg8_mat"
+                                              density="3500"/>
+                                        
+                                        <!-- ========== Segment 9 — REAR BODY ========== -->
+                                        <body name="seg9" pos="0 -0.060 0">
+                                            <joint name="joint8_yaw" type="hinge" axis="0 0 1" limited="true" range="-42 42"/>
+                                            <joint name="joint8_roll" type="hinge" axis="0 1 0" limited="true" range="-28 28"/>
+                                            
+                                            <geom name="seg9_geom" type="box"
+                                                  size="0.005 0.030 0.029"
+                                                  pos="0 -0.030 0"
+                                                  material="seg9_mat"
+                                                  density="3200"/>
+                                            
+                                            <!-- ========== Segment 10 — PRE-TAIL ========== -->
+                                            <body name="seg10" pos="0 -0.060 0">
+                                                <joint name="joint9_yaw" type="hinge" axis="0 0 1" limited="true" range="-45 45"/>
+                                                <joint name="joint9_roll" type="hinge" axis="0 1 0" limited="true" range="-28 28"/>
+                                                
+                                                <geom name="seg10_geom" type="box"
+                                                      size="0.0045 0.029 0.028"
+                                                      pos="0 -0.029 0"
+                                                      material="seg10_mat"
+                                                      density="2800"/>
+                                                
+                                                <!-- ========== Segment 11 — TAIL MID ========== -->
+                                                <body name="seg11" pos="0 -0.058 0">
+                                                    <joint name="joint10_yaw" type="hinge" axis="0 0 1" limited="true" range="-48 48"/>
+                                                    <joint name="joint10_roll" type="hinge" axis="0 1 0" limited="true" range="-30 30"/>
+                                                    
+                                                    <geom name="seg11_geom" type="box"
+                                                          size="0.0045 0.028 0.027"
+                                                          pos="0 -0.028 0"
+                                                          material="seg11_mat"
+                                                          density="2500"/>
+                                                    
+                                                    <!-- ========== Segment 12 — TAIL TIP ========== -->
+                                                    <body name="seg12" pos="0 -0.056 0">
+                                                        <joint name="joint11_yaw" type="hinge" axis="0 0 1" limited="true" range="-50 50"/>
+                                                        <joint name="joint11_roll" type="hinge" axis="0 1 0" limited="true" range="-30 30"/>
+                                                        
+                                                        <geom name="seg12_geom" type="box"
+                                                              size="0.004 0.027 0.026"
+                                                              pos="0 -0.027 0"
+                                                              material="seg12_mat"
+                                                              density="2200"/>
+                                                    </body>
+                                                </body>
+                                            </body>
+                                        </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+        
+        <light directional="true" diffuse="0.9 0.9 0.9" pos="0 0 3" dir="0 0 -1"/>
+    </worldbody>
+    
+    <actuator>
+        <!-- 22 position actuators (11 joint pairs: yaw + roll) -->
+        <!-- Head A-B joint (joint1): very stiff, limited roll for head stability -->
+        <!-- kp increases for head (precise control), decreases toward tail (flexible) -->
+        
+        <!-- Joint 1 (A-B head-neck): restricted roll, stiff -->
+        <position name="pos1_yaw"  joint="joint1_yaw"  kp="3.0" kv="0.3" ctrlrange="-0.349 0.349" forcerange="-1.2 1.2"/>
+        <position name="pos1_roll" joint="joint1_roll" kp="4.0" kv="0.4" ctrlrange="-0.175 0.175" forcerange="-0.8 0.8"/>
+        
+        <!-- Joint 2 (neck-front body): moderate roll allowed -->
+        <position name="pos2_yaw"  joint="joint2_yaw"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos2_roll" joint="joint2_roll" kp="3.0" kv="0.3"  ctrlrange="-0.349 0.349" forcerange="-1.2 1.2"/>
+        
+        <!-- Joint 3 -->
+        <position name="pos3_yaw"  joint="joint3_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.611 0.611" forcerange="-1.0 1.0"/>
+        <position name="pos3_roll" joint="joint3_roll" kp="2.5" kv="0.25" ctrlrange="-0.384 0.384" forcerange="-1.2 1.2"/>
+        
+        <!-- Joint 4 -->
+        <position name="pos4_yaw"  joint="joint4_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.611 0.611" forcerange="-1.0 1.0"/>
+        <position name="pos4_roll" joint="joint4_roll" kp="2.5" kv="0.25" ctrlrange="-0.436 0.436" forcerange="-1.2 1.2"/>
+        
+        <!-- Joint 5 -->
+        <position name="pos5_yaw"  joint="joint5_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.611 0.611" forcerange="-1.0 1.0"/>
+        <position name="pos5_roll" joint="joint5_roll" kp="2.5" kv="0.25" ctrlrange="-0.436 0.436" forcerange="-1.2 1.2"/>
+        
+        <!-- Joint 6 -->
+        <position name="pos6_yaw"  joint="joint6_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.698 0.698" forcerange="-1.0 1.0"/>
+        <position name="pos6_roll" joint="joint6_roll" kp="2.0" kv="0.2"  ctrlrange="-0.471 0.471" forcerange="-1.0 1.0"/>
+        
+        <!-- Joint 7 -->
+        <position name="pos7_yaw"  joint="joint7_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.698 0.698" forcerange="-1.0 1.0"/>
+        <position name="pos7_roll" joint="joint7_roll" kp="2.0" kv="0.2"  ctrlrange="-0.471 0.471" forcerange="-1.0 1.0"/>
+        
+        <!-- Joint 8 -->
+        <position name="pos8_yaw"  joint="joint8_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.733 0.733" forcerange="-1.0 1.0"/>
+        <position name="pos8_roll" joint="joint8_roll" kp="2.0" kv="0.2"  ctrlrange="-0.489 0.489" forcerange="-1.0 1.0"/>
+        
+        <!-- Joint 9 -->
+        <position name="pos9_yaw"  joint="joint9_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.785 0.785" forcerange="-1.0 1.0"/>
+        <position name="pos9_roll" joint="joint9_roll" kp="2.0" kv="0.2"  ctrlrange="-0.489 0.489" forcerange="-1.0 1.0"/>
+        
+        <!-- Joint 10 -->
+        <position name="pos10_yaw"  joint="joint10_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.838 0.838" forcerange="-1.0 1.0"/>
+        <position name="pos10_roll" joint="joint10_roll" kp="2.0" kv="0.2"  ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        
+        <!-- Joint 11 (tail tip): most flexible -->
+        <position name="pos11_yaw"  joint="joint11_yaw"  kp="2.0" kv="0.2" ctrlrange="-0.873 0.873" forcerange="-1.0 1.0"/>
+        <position name="pos11_roll" joint="joint11_roll" kp="2.0" kv="0.2"  ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+    </actuator>
+</mujoco>

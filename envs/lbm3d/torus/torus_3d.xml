@@ -1,0 +1,303 @@
+<mujoco model="Torus3D_RingSwimmer_v3">
+    <!--
+    Torus (Ring) Robot v3 — bend + wave joints, elliptical tube meshes
+
+    Topology: 12 arc-segment elliptical-tube meshes arranged along a torus centerline
+    - Major radius R = 0.08 m (ring centerline)
+    - Tube radius  r = 0.012 m (cross-section, reduced for clearance)
+    - Y-axis squeeze = 0.5 (elliptical cross-section for better thrust)
+    - Each segment spans 30° of arc (mesh shortened 15% for inter-segment gap)
+    - seg1 is root (freejoint at segment center), seg2..seg12 connected by joints
+    - seg12 has a closure sub-body, welded back to seg1
+
+    Each segment has 1 geom: elliptical tube arc mesh
+
+    Joint types per connection (12 connections × 2 joints = 24 joints):
+      - bend:    hinge along radial direction (ring contraction/expansion)
+      - wave:    hinge along Y axis (out-of-plane bending)
+
+    Anti-collision design:
+      1. Geom shortened 15% (7.5% each end) for inter-segment gap (~3mm)
+      2. Tube radius reduced from 0.015 to 0.012m for radial clearance
+      3. Conservative joint limits: bend ±30°, wave ±20°
+      4. Joint damping prevents rapid oscillation
+
+    Coordinate system: ring lies in XZ plane, Y is forward (ring normal)
+    seg1 body at segment center (15°), seg2..seg12 bodies at joint positions
+
+    Ring centerline: (R*cos(θ), 0, R*sin(θ))
+
+    Segment layout (center angles):
+      seg1: 15°    seg2: 45°    seg3: 75°    seg4: 105°
+      seg5: 135°   seg6: 165°   seg7: 195°   seg8: 225°
+      seg9: 255°   seg10: 285°  seg11: 315°  seg12: 345°
+
+    Joint positions (boundary angles):
+      joint0: 0°    joint1: 30°   joint2: 60°   joint3: 90°
+      joint4: 120°  joint5: 150°  joint6: 180°  joint7: 210°
+      joint8: 240°  joint9: 270°  joint10: 300° joint11: 330°
+
+    Actuator layout (24 actuators):
+      pos1_bend, pos1_wave,   (joint1, seg1->seg2, at 30°)
+      pos2_bend, pos2_wave,   (joint2, seg2->seg3, at 60°)
+      ...
+      pos12_bend, pos12_wave  (joint12, closure, at 0°)
+    -->
+
+    <compiler angle="degree" inertiafromgeom="true" meshdir="meshes/"/>
+    <option timestep="0.01" gravity="0 0 0" integrator="RK4"/>
+
+    <default>
+        <joint damping="0.15" stiffness="0" armature="0.015"/>
+        <motor ctrlrange="-1 1" ctrllimited="true"/>
+        <geom solref="0.002 1" solimp="0.9 0.95 0.001" contype="0" conaffinity="0"/>
+    </default>
+
+    <asset>
+        <!-- Gradient colors around the ring (12 segments) -->
+        <material name="seg1_mat"  rgba="0.90 0.25 0.20 1"/>
+        <material name="seg2_mat"  rgba="0.90 0.45 0.15 1"/>
+        <material name="seg3_mat"  rgba="0.85 0.65 0.15 1"/>
+        <material name="seg4_mat"  rgba="0.65 0.80 0.15 1"/>
+        <material name="seg5_mat"  rgba="0.35 0.80 0.25 1"/>
+        <material name="seg6_mat"  rgba="0.15 0.75 0.50 1"/>
+        <material name="seg7_mat"  rgba="0.15 0.65 0.75 1"/>
+        <material name="seg8_mat"  rgba="0.15 0.45 0.85 1"/>
+        <material name="seg9_mat"  rgba="0.30 0.30 0.85 1"/>
+        <material name="seg10_mat" rgba="0.55 0.25 0.80 1"/>
+        <material name="seg11_mat" rgba="0.75 0.25 0.65 1"/>
+        <material name="seg12_mat" rgba="0.85 0.25 0.40 1"/>
+
+        <!-- Torus full-tube arc segment meshes -->
+        <mesh name="seg1_mesh"  file="torus_seg1.stl"/>
+        <mesh name="seg2_mesh"  file="torus_seg2.stl"/>
+        <mesh name="seg3_mesh"  file="torus_seg3.stl"/>
+        <mesh name="seg4_mesh"  file="torus_seg4.stl"/>
+        <mesh name="seg5_mesh"  file="torus_seg5.stl"/>
+        <mesh name="seg6_mesh"  file="torus_seg6.stl"/>
+        <mesh name="seg7_mesh"  file="torus_seg7.stl"/>
+        <mesh name="seg8_mesh"  file="torus_seg8.stl"/>
+        <mesh name="seg9_mesh"  file="torus_seg9.stl"/>
+        <mesh name="seg10_mesh" file="torus_seg10.stl"/>
+        <mesh name="seg11_mesh" file="torus_seg11.stl"/>
+        <mesh name="seg12_mesh" file="torus_seg12.stl"/>
+    </asset>
+
+    <worldbody>
+        <!-- ========================================================== -->
+        <!-- 12-segment torus v3: full tube geometry + 2-DOF joints      -->
+        <!-- Ring center at origin, ring in XZ plane, Y = forward        -->
+        <!-- R=0.08m, r=0.012m, N=12 segments                           -->
+        <!--                                                             -->
+        <!-- Ring centerline: (R*cos(θ), 0, R*sin(θ))                   -->
+        <!-- Each segment: single full-tube geom                         -->
+        <!-- Joints between segments: bend (radial) + wave (Y-axis)     -->
+        <!--                                                             -->
+        <!-- Joint axis conventions at angle θ:                          -->
+        <!--   bend axis  = radial inward = (-cos θ, 0, -sin θ)         -->
+        <!--   wave axis  = Y (ring normal) = (0, 1, 0)                 -->
+        <!-- ========================================================== -->
+
+        <!-- ========== Segment 1 — ROOT (0°~30°, center at 15°) ========== -->
+        <body name="seg1" pos="0.077274 0 0.020706">
+            <freejoint name="root_joint"/>
+            <geom name="seg1_geom" type="mesh" mesh="seg1_mesh"
+                  material="seg1_mat" density="4000"/>
+
+            <!-- ========== Segment 2 (30°~60°, center at 45°) ========== -->
+            <!-- Joint at 30°: bend axis = (-cos30, 0, -sin30) -->
+            <body name="seg2" pos="-0.007992 0 0.019294">
+                <joint name="joint1_bend" type="hinge" axis="-0.866025 0 -0.5"
+                       limited="true" range="-30 30"/>
+                <joint name="joint1_wave" type="hinge" axis="0 1 0"
+                       limited="true" range="-20 20"/>
+                <geom name="seg2_geom" type="mesh" mesh="seg2_mesh"
+                      material="seg2_mat" density="4000"/>
+
+                <!-- ========== Segment 3 (60°~90°, center at 75°) ========== -->
+                <!-- Joint at 60°: bend axis = (-cos60, 0, -sin60) -->
+                <body name="seg3" pos="-0.029282 0 0.029282">
+                    <joint name="joint2_bend" type="hinge" axis="-0.5 0 -0.866025"
+                           limited="true" range="-30 30"/>
+                    <joint name="joint2_wave" type="hinge" axis="0 1 0"
+                           limited="true" range="-20 20"/>
+                    <geom name="seg3_geom" type="mesh" mesh="seg3_mesh"
+                          material="seg3_mat" density="4000"/>
+
+                    <!-- ========== Segment 4 (90°~120°, center at 105°) ========== -->
+                    <!-- Joint at 90°: bend axis = (0, 0, -1) -->
+                    <body name="seg4" pos="-0.040000 0 0.010718">
+                        <joint name="joint3_bend" type="hinge" axis="0 0 -1"
+                               limited="true" range="-30 30"/>
+                        <joint name="joint3_wave" type="hinge" axis="0 1 0"
+                               limited="true" range="-20 20"/>
+                        <geom name="seg4_geom" type="mesh" mesh="seg4_mesh"
+                              material="seg4_mat" density="4000"/>
+
+                        <!-- ========== Segment 5 (120°~150°, center at 135°) ========== -->
+                        <!-- Joint at 120°: bend axis = (0.5, 0, -0.866025) -->
+                        <body name="seg5" pos="-0.040000 0 -0.010718">
+                            <joint name="joint4_bend" type="hinge" axis="0.5 0 -0.866025"
+                                   limited="true" range="-30 30"/>
+                            <joint name="joint4_wave" type="hinge" axis="0 1 0"
+                                   limited="true" range="-20 20"/>
+                            <geom name="seg5_geom" type="mesh" mesh="seg5_mesh"
+                                  material="seg5_mat" density="4000"/>
+
+                            <!-- ========== Segment 6 (150°~180°, center at 165°) ========== -->
+                            <!-- Joint at 150°: bend axis = (0.866025, 0, -0.5) -->
+                            <body name="seg6" pos="-0.029282 0 -0.029282">
+                                <joint name="joint5_bend" type="hinge" axis="0.866025 0 -0.5"
+                                       limited="true" range="-30 30"/>
+                                <joint name="joint5_wave" type="hinge" axis="0 1 0"
+                                       limited="true" range="-20 20"/>
+                                <geom name="seg6_geom" type="mesh" mesh="seg6_mesh"
+                                      material="seg6_mat" density="4000"/>
+
+                                <!-- ========== Segment 7 (180°~210°, center at 195°) ========== -->
+                                <!-- Joint at 180°: bend axis = (1, 0, 0) -->
+                                <body name="seg7" pos="-0.010718 0 -0.040000">
+                                    <joint name="joint6_bend" type="hinge" axis="1 0 0"
+                                           limited="true" range="-30 30"/>
+                                    <joint name="joint6_wave" type="hinge" axis="0 1 0"
+                                           limited="true" range="-20 20"/>
+                                    <geom name="seg7_geom" type="mesh" mesh="seg7_mesh"
+                                          material="seg7_mat" density="4000"/>
+
+                                    <!-- ========== Segment 8 (210°~240°, center at 225°) ========== -->
+                                    <!-- Joint at 210°: bend axis = (0.866025, 0, 0.5) -->
+                                    <body name="seg8" pos="0.010718 0 -0.040000">
+                                        <joint name="joint7_bend" type="hinge" axis="0.866025 0 0.5"
+                                               limited="true" range="-30 30"/>
+                                        <joint name="joint7_wave" type="hinge" axis="0 1 0"
+                                               limited="true" range="-20 20"/>
+                                        <geom name="seg8_geom" type="mesh" mesh="seg8_mesh"
+                                              material="seg8_mat" density="4000"/>
+
+                                        <!-- ========== Segment 9 (240°~270°, center at 255°) ========== -->
+                                        <!-- Joint at 240°: bend axis = (0.5, 0, 0.866025) -->
+                                        <body name="seg9" pos="0.029282 0 -0.029282">
+                                            <joint name="joint8_bend" type="hinge" axis="0.5 0 0.866025"
+                                                   limited="true" range="-30 30"/>
+                                            <joint name="joint8_wave" type="hinge" axis="0 1 0"
+                                                   limited="true" range="-20 20"/>
+                                            <geom name="seg9_geom" type="mesh" mesh="seg9_mesh"
+                                                  material="seg9_mat" density="4000"/>
+
+                                            <!-- ========== Segment 10 (270°~300°, center at 285°) ========== -->
+                                            <!-- Joint at 270°: bend axis = (0, 0, 1) -->
+                                            <body name="seg10" pos="0.040000 0 -0.010718">
+                                                <joint name="joint9_bend" type="hinge" axis="0 0 1"
+                                                       limited="true" range="-30 30"/>
+                                                <joint name="joint9_wave" type="hinge" axis="0 1 0"
+                                                       limited="true" range="-20 20"/>
+                                                <geom name="seg10_geom" type="mesh" mesh="seg10_mesh"
+                                                      material="seg10_mat" density="4000"/>
+
+                                                <!-- ========== Segment 11 (300°~330°, center at 315°) ========== -->
+                                                <!-- Joint at 300°: bend axis = (-0.5, 0, 0.866025) -->
+                                                <body name="seg11" pos="0.040000 0 0.010718">
+                                                    <joint name="joint10_bend" type="hinge" axis="-0.5 0 0.866025"
+                                                           limited="true" range="-30 30"/>
+                                                    <joint name="joint10_wave" type="hinge" axis="0 1 0"
+                                                           limited="true" range="-20 20"/>
+                                                    <geom name="seg11_geom" type="mesh" mesh="seg11_mesh"
+                                                          material="seg11_mat" density="4000"/>
+
+                                                    <!-- ========== Segment 12 (330°~360°, center at 345°) ========== -->
+                                                    <!-- Joint at 330°: bend axis = (-0.866025, 0, 0.5) -->
+                                                    <body name="seg12" pos="0.029282 0 0.029282">
+                                                        <joint name="joint11_bend" type="hinge" axis="-0.866025 0 0.5"
+                                                               limited="true" range="-30 30"/>
+                                                        <joint name="joint11_wave" type="hinge" axis="0 1 0"
+                                                               limited="true" range="-20 20"/>
+                                                        <geom name="seg12_geom" type="mesh" mesh="seg12_mesh"
+                                                              material="seg12_mat" density="4000"/>
+
+                                                        <!-- ========== Closure joint (seg12→seg1, at 0°) ========== -->
+                                                        <!-- Joint at 0°: bend axis = (-1, 0, 0) -->
+                                                        <body name="seg12_closure" pos="0.010718 0 0.040000">
+                                                            <inertial mass="0.001" pos="0 0 0" diaginertia="1e-9 1e-9 1e-9"/>
+                                                            <joint name="joint12_bend" type="hinge" axis="-1 0 0"
+                                                                   limited="true" range="-30 30"/>
+                                                            <joint name="joint12_wave" type="hinge" axis="0 1 0"
+                                                                   limited="true" range="-20 20"/>
+                                                        </body>
+                                                    </body>
+                                                </body>
+                                            </body>
+                                        </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+
+        <light directional="true" diffuse="0.9 0.9 0.9" pos="0 0 3" dir="0 0 -1"/>
+    </worldbody>
+
+    <!-- Weld constraint to close the ring: seg12_closure → seg1 -->
+    <equality>
+        <weld body1="seg12_closure" body2="seg1"
+              solref="0.02 1"
+              solimp="0.9 0.95 0.001"
+              active="true"/>
+    </equality>
+
+    <actuator>
+        <!-- 24 position actuators: 12 bend + 12 wave -->
+        <!-- Ordered: bend1,wave1, bend2,wave2, ... -->
+        <!-- bend: ±0.524 rad (±30°), wave: ±0.349 rad (±20°) -->
+
+        <!-- Joint 1 (seg1→seg2, at 30°) -->
+        <position name="pos1_bend"  joint="joint1_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos1_wave"  joint="joint1_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 2 (seg2→seg3, at 60°) -->
+        <position name="pos2_bend"  joint="joint2_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos2_wave"  joint="joint2_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 3 (seg3→seg4, at 90°) -->
+        <position name="pos3_bend"  joint="joint3_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos3_wave"  joint="joint3_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 4 (seg4→seg5, at 120°) -->
+        <position name="pos4_bend"  joint="joint4_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos4_wave"  joint="joint4_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 5 (seg5→seg6, at 150°) -->
+        <position name="pos5_bend"  joint="joint5_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos5_wave"  joint="joint5_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 6 (seg6→seg7, at 180°) -->
+        <position name="pos6_bend"  joint="joint6_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos6_wave"  joint="joint6_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 7 (seg7→seg8, at 210°) -->
+        <position name="pos7_bend"  joint="joint7_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos7_wave"  joint="joint7_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 8 (seg8→seg9, at 240°) -->
+        <position name="pos8_bend"  joint="joint8_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos8_wave"  joint="joint8_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 9 (seg9→seg10, at 270°) -->
+        <position name="pos9_bend"  joint="joint9_bend"  kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos9_wave"  joint="joint9_wave"  kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 10 (seg10→seg11, at 300°) -->
+        <position name="pos10_bend" joint="joint10_bend" kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos10_wave" joint="joint10_wave" kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 11 (seg11→seg12, at 330°) -->
+        <position name="pos11_bend" joint="joint11_bend" kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos11_wave" joint="joint11_wave" kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+
+        <!-- Joint 12 (seg12→seg1 closure, at 0°) -->
+        <position name="pos12_bend" joint="joint12_bend" kp="2.5" kv="0.25" ctrlrange="-0.524 0.524" forcerange="-1.0 1.0"/>
+        <position name="pos12_wave" joint="joint12_wave" kp="2.5" kv="0.25" ctrlrange="-0.349 0.349" forcerange="-1.0 1.0"/>
+    </actuator>
+</mujoco>

@@ -1,0 +1,134 @@
+<mujoco model="Clownfish3D_Swimmer">
+    <!--
+    Clownfish (Nemo) 3D Robot for LBM-MuJoCo Coupled Simulation (v2)
+
+    4-segment articulated body — no side fins (to be added later).
+
+    Structure:
+      head (freejoint, 6DOF root)
+        body (2DOF: yaw Z + pitch X)
+          peduncle (2DOF: yaw Z + pitch X)
+            caudal (3DOF: rotate Y + yaw Z + pitch X)
+
+    Total actuators: 2 + 2 + 3 = 7 DOF
+    Coordinate: X=lateral(right+), Y=forward, Z=up
+
+    Mesh at 1x; scale="2 2 2" applied here.
+    Approximate dimensions (after 2x scale):
+      Head:     ~0.028W x 0.050L x 0.060H
+      Body:     ~0.028W x 0.056L x 0.064H
+      Peduncle: ~0.028W x 0.050L x 0.060H (tapers to narrow)
+      Caudal:   ~0.004W x 0.036L x 0.060H (thin fan)
+      Total length: ~0.176m
+    -->
+
+    <compiler angle="degree" inertiafromgeom="true" meshdir="meshes/"/>
+    <option timestep="0.01" gravity="0 0 0" integrator="RK4"/>
+
+    <default>
+        <joint damping="0.50" stiffness="0" armature="0.10"/>
+        <motor ctrlrange="-1 1" ctrllimited="true"/>
+        <geom solref="0.002 1" solimp="0.9 0.95 0.001"/>
+    </default>
+
+    <asset>
+        <!-- Materials: orange clownfish coloring -->
+        <material name="head_mat"     rgba="1.00 0.55 0.10 1"/>
+        <material name="body_mat"     rgba="1.00 0.50 0.05 1"/>
+        <material name="peduncle_mat" rgba="1.00 0.55 0.10 1"/>
+        <material name="caudal_mat"   rgba="1.00 0.60 0.15 1"/>
+
+        <!-- Meshes (scale 2x) -->
+        <mesh name="head_mesh"     file="clownfish_head.stl"     scale="2 2 2"/>
+        <mesh name="body_mesh"     file="clownfish_body.stl"     scale="2 2 2"/>
+        <mesh name="peduncle_mesh" file="clownfish_peduncle.stl" scale="2 2 2"/>
+        <mesh name="caudal_mesh"   file="clownfish_caudal.stl"   scale="2 2 2"/>
+    </asset>
+
+    <worldbody>
+        <!-- ============ HEAD (root body with freejoint) ============ -->
+        <!-- Head mesh: Y [0, 0.025], origin at rear (Y=0) -->
+        <body name="head" pos="0 0 0">
+            <freejoint name="root_joint"/>
+
+            <geom name="head_geom" type="mesh" mesh="head_mesh"
+                  material="head_mat" density="3500"/>
+
+            <!-- ============ BODY ============ -->
+            <!-- Body mesh: Y [-0.014, 0.014] at 1x, scaled 2x → [-0.028, 0.028]
+                 body front(+0.028) aligns with head rear(Y=0) → pos_y = -0.028 -->
+            <body name="body" pos="0 -0.028 0">
+                <joint name="body_yaw" type="hinge" axis="0 0 1"
+                       pos="0 0.028 0" limited="true" range="-25 25"/>
+                <joint name="body_pitch" type="hinge" axis="1 0 0"
+                       pos="0 0.028 0" limited="true" range="-30 30"/>
+
+                <geom name="body_geom" type="mesh" mesh="body_mesh"
+                      material="body_mat" density="4000"/>
+
+                <!-- ============ TAIL PEDUNCLE ============ -->
+                <!-- Peduncle mesh: Y [-0.025, 0] at 1x, scaled 2x → [-0.050, 0]
+                     peduncle front(Y=0) aligns with body rear(Y=-0.028) → pos_y = -0.028 -->
+                <body name="peduncle" pos="0 -0.028 0">
+                    <joint name="peduncle_yaw" type="hinge" axis="0 0 1"
+                           limited="true" range="-35 35"/>
+                    <joint name="peduncle_pitch" type="hinge" axis="1 0 0"
+                           limited="true" range="-25 25"/>
+
+                    <geom name="peduncle_geom" type="mesh" mesh="peduncle_mesh"
+                          material="peduncle_mat" density="3000"/>
+
+                    <!-- ============ CAUDAL FIN ============ -->
+                    <!-- Caudal mesh: Y [-0.018, 0] at 1x, scaled 2x → [-0.036, 0]
+                         caudal front(Y=0) aligns with peduncle rear(Y=-0.050) → pos_y = -0.050 -->
+                    <body name="caudal" pos="0 -0.050 0">
+                        <joint name="caudal_rotate" type="hinge" axis="0 1 0"
+                               limited="true" range="-30 30"/>
+                        <joint name="caudal_yaw" type="hinge" axis="0 0 1"
+                               limited="true" range="-45 45"/>
+                        <joint name="caudal_pitch" type="hinge" axis="1 0 0"
+                               limited="true" range="-30 30"/>
+
+                        <geom name="caudal_geom" type="mesh" mesh="caudal_mesh"
+                              material="caudal_mat" density="2000"/>
+                    </body>
+                </body>
+            </body>
+        </body>
+
+        <light directional="true" diffuse="0.9 0.9 0.9" pos="0 0 3" dir="0 0 -1"/>
+    </worldbody>
+
+    <actuator>
+        <!--
+        Actuator layout (7 DOFs):
+          [0] body_yaw        Body: lateral swing (yaw around Z)
+          [1] body_pitch      Body: vertical pitch (around X)
+          [2] peduncle_yaw    Peduncle: lateral swing
+          [3] peduncle_pitch  Peduncle: vertical pitch
+          [4] caudal_rotate   Caudal fin: rotation / twist (around Y)
+          [5] caudal_yaw      Caudal fin: lateral swing (largest range)
+          [6] caudal_pitch    Caudal fin: vertical pitch
+        -->
+
+        <!-- Body joint: stiff, small range -->
+        <position name="pos_body_yaw"   joint="body_yaw"   kp="1.8" kv="0.25"
+                  ctrlrange="-0.436 0.436" forcerange="-1.2 1.2"/>
+        <position name="pos_body_pitch" joint="body_pitch" kp="1.6" kv="0.22"
+                  ctrlrange="-0.524 0.524" forcerange="-0.9 0.9"/>
+
+        <!-- Peduncle joint: medium -->
+        <position name="pos_peduncle_yaw"   joint="peduncle_yaw"   kp="1.5" kv="0.22"
+                  ctrlrange="-0.611 0.611" forcerange="-1.0 1.0"/>
+        <position name="pos_peduncle_pitch" joint="peduncle_pitch" kp="1.4" kv="0.20"
+                  ctrlrange="-0.436 0.436" forcerange="-0.8 0.8"/>
+
+        <!-- Caudal fin: flexible, with rotation -->
+        <position name="pos_caudal_rotate" joint="caudal_rotate" kp="0.7" kv="0.12"
+                  ctrlrange="-0.524 0.524" forcerange="-0.4 0.4"/>
+        <position name="pos_caudal_yaw"   joint="caudal_yaw"   kp="0.9" kv="0.15"
+                  ctrlrange="-0.785 0.785" forcerange="-0.6 0.6"/>
+        <position name="pos_caudal_pitch" joint="caudal_pitch" kp="0.9" kv="0.15"
+                  ctrlrange="-0.524 0.524" forcerange="-0.6 0.6"/>
+    </actuator>
+</mujoco>

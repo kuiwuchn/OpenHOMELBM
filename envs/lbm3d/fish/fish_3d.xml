@@ -1,0 +1,95 @@
+<mujoco model="Fish3D_Swimmer">
+    <!--
+    3D Fish/Snake Robot for LBM-MuJoCo Coupled Simulation
+    
+    结构说明:
+    - head: 头部 (根body, freejoint提供6DOF自由度)
+    - body: 身体中段 (hinge关节绕Z轴旋转)
+    - tail: 尾部 (hinge关节绕Z轴旋转)
+    
+    控制:
+    - joint1: 头-身关节, 扭矩范围 [-1, 1]
+    - joint2: 身-尾关节, 扭矩范围 [-1, 1]
+    -->
+    
+    <compiler angle="degree" inertiafromgeom="true"/>
+    <option timestep="0.001" gravity="0 0 0" integrator="RK4"/>
+    
+    <default>
+        <joint damping="0.1" stiffness="0" armature="0.01"/>
+        <motor ctrlrange="-1 1" ctrllimited="true"/>
+        <geom solref="0.001 1" solimp="0.9 0.95 0.001"/>
+    </default>
+    
+    <asset>
+        <material name="head_mat" rgba="0.2 0.6 0.9 1"/>
+        <material name="body_mat" rgba="0.4 0.8 1.0 1"/>
+        <material name="tail_mat" rgba="0.6 1.0 1.0 1"/>
+    </asset>
+    
+    <worldbody>
+        <!-- 头部: 根body，使用freejoint获得6DOF自由度 -->
+        <body name="head" pos="0 0 0">
+            <freejoint name="root_joint"/>
+            
+        <!-- 头部几何体: 椭球形，流线型 -->
+            <geom name="head_geom" type="ellipsoid"
+                  size="0.084 0.126 0.063"
+                  pos="0 0 0"
+                  material="head_mat"
+                  density="500"/>
+            
+            <!-- 身体中段 - 3DOF独立hinge关节 -->
+            <body name="body" pos="0 -0.147 0">
+                <!-- Pitch (X轴俯仰) -->
+                <joint name="joint1_pitch" type="hinge" axis="1 0 0" limited="true" range="-15 15"/>
+                <!-- Roll (Y轴翻滚) -->
+                <joint name="joint1_roll" type="hinge" axis="0 1 0" limited="true" range="-10 10"/>
+                <!-- Yaw (Z轴摆尾，主推力) -->
+                <joint name="joint1_yaw" type="hinge" axis="0 0 1" limited="true" range="-60 60"/>
+                
+                <!-- 身体几何体: 椭球形 -->
+                <geom name="body_geom" type="ellipsoid"
+                      size="0.074 0.105 0.053"
+                      pos="0 0 0"
+                      material="body_mat"
+                      density="500"/>
+                
+                <!-- 尾部 - 3DOF独立hinge关节 -->
+                <body name="tail" pos="0 -0.126 0">
+                    <!-- Pitch (X轴) -->
+                    <joint name="joint2_pitch" type="hinge" axis="1 0 0" limited="true" range="-15 15"/>
+                    <!-- Roll (Y轴) -->
+                    <joint name="joint2_roll" type="hinge" axis="0 1 0" limited="true" range="-10 10"/>
+                    <!-- Yaw (Z轴，主摆尾) -->
+                    <joint name="joint2_yaw" type="hinge" axis="0 0 1" limited="true" range="-60 60"/>
+                    
+                    <!-- 尾柄: 细长连接段 -->
+                    <geom name="tail_stem" type="capsule"
+                          fromto="0 0 0 0 -0.084 0"
+                          size="0.032"
+                          material="tail_mat"
+                          density="500"/>
+                    
+                    <!-- 尾鳍: 垂直扁平椭球形，适合左右摆动推水 -->
+                    <geom name="tail_fin" type="ellipsoid"
+                          size="0.017 0.053 0.084"
+                          pos="0 -0.105 0"
+                          material="tail_mat"
+                          density="500"/>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+    
+    <actuator>
+        <!-- Joint1 (头-身) -->
+        <motor name="motor1_pitch" joint="joint1_pitch" gear="10" ctrlrange="-1 1"/>
+        <motor name="motor1_roll" joint="joint1_roll" gear="10" ctrlrange="-1 1"/>
+        <motor name="motor1_yaw" joint="joint1_yaw" gear="40" ctrlrange="-1 1"/>
+        <!-- Joint2 (身-尾) -->
+        <motor name="motor2_pitch" joint="joint2_pitch" gear="10" ctrlrange="-1 1"/>
+        <motor name="motor2_roll" joint="joint2_roll" gear="10" ctrlrange="-1 1"/>
+        <motor name="motor2_yaw" joint="joint2_yaw" gear="40" ctrlrange="-1 1"/>
+    </actuator>
+</mujoco>

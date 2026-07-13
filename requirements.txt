@@ -1,0 +1,13 @@
+matplotlib
+ruamel.yaml
+gym
+mujoco
+opencv-python
+numpy
+trimesh
+scipy
+mujoco-warp
+warp
+tqdm
+
+

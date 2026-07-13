@@ -1,0 +1,69 @@
+{
+  "name": "eel2d_projected",
+  "env": {
+    "class": "GenericLBM2DEnv",
+    "xml_path": "envs/lbm3d/eel/eel_3d.xml",
+    "solid_config": [
+      {"solid_id": 0, "body_id": 1, "body_or_geom_name": "seg1", "lbm_position": [200, 350], "is_body": true},
+      {"solid_id": 1, "body_id": 2, "body_or_geom_name": "seg2", "lbm_position": [200, 344], "is_body": true},
+      {"solid_id": 2, "body_id": 3, "body_or_geom_name": "seg3", "lbm_position": [200, 338], "is_body": true},
+      {"solid_id": 3, "body_id": 4, "body_or_geom_name": "seg4", "lbm_position": [200, 332], "is_body": true},
+      {"solid_id": 4, "body_id": 5, "body_or_geom_name": "seg5", "lbm_position": [200, 326], "is_body": true},
+      {"solid_id": 5, "body_id": 6, "body_or_geom_name": "seg6", "lbm_position": [200, 320], "is_body": true},
+      {"solid_id": 6, "body_id": 7, "body_or_geom_name": "seg7", "lbm_position": [200, 314], "is_body": true},
+      {"solid_id": 7, "body_id": 8, "body_or_geom_name": "seg8", "lbm_position": [200, 308], "is_body": true},
+      {"solid_id": 8, "body_id": 9, "body_or_geom_name": "seg9", "lbm_position": [200, 302], "is_body": true},
+      {"solid_id": 9, "body_id": 10, "body_or_geom_name": "seg10", "lbm_position": [200, 296], "is_body": true},
+      {"solid_id": 10, "body_id": 11, "body_or_geom_name": "seg11", "lbm_position": [200, 290], "is_body": true},
+      {"solid_id": 11, "body_id": 12, "body_or_geom_name": "seg12", "lbm_position": [200, 284], "is_body": true}
+    ]
+  },
+  "lbm": {
+    "nx": 400,
+    "ny": 600,
+    "lbm_scale": 0.25,
+    "per_frame_steps": 8
+  },
+  "render": {
+    "type": "vorticity",
+    "output_height": 720,
+    "mujoco_width": 640,
+    "mujoco_height": 640,
+    "vmax_scale": 0.2,
+    "opengl_lbm_vmax": 1.0,
+    "mujoco_background_rgb": [26, 26, 26],
+    "mujoco_background_threshold": 5,
+    "window_name": "Eel2D Projected Realtime Control",
+    "record_fps": 30
+  },
+  "camera": {
+    "follow": true,
+    "follow_body": "seg1",
+    "distance": 0.75,
+    "azimuth": 90.0,
+    "elevation": -90.0,
+    "lookat": [0.0, -0.35, 0.0]
+  },
+  "control": {
+    "dt": 0.01,
+    "warmup_steps": 15,
+    "transition_steps": 36,
+    "start_mode": "idle"
+  },
+  "controls": {
+    "w": "forward",
+    "a": "turn_l",
+    "d": "turn_r",
+    "s": "idle",
+    "f": "fast",
+    "x": "reverse"
+  },
+  "presets": {
+    "forward": {"type": "eel_wave", "A": 0.28, "omega": -1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": 0.0, "roll": 0.0},
+    "fast": {"type": "eel_wave", "A": 0.36, "omega": -1.0, "omega_max": 15.707963268, "k_wave": 0.65, "head_bias": 0.0, "roll": 0.0},
+    "turn_l": {"type": "eel_wave", "A": 0.24, "omega": -1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": 0.18, "roll": 0.0},
+    "turn_r": {"type": "eel_wave", "A": 0.24, "omega": -1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": -0.18, "roll": 0.0},
+    "reverse": {"type": "eel_wave", "A": 0.28, "omega": 1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": 0.0, "roll": 0.0},
+    "idle": {"type": "constant", "values": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+  }
+}

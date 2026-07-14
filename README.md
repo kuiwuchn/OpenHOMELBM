@@ -1,49 +1,125 @@
 # LBM-RIGID
 
-## 环境配置
+## Environment Setup
 
-### 第一步：创建 Conda 环境
+### Step 1: Create a Conda environment
 
 ```powershell
 conda create -n dreamer python=3.11 -y
 conda activate dreamer
 ```
 
-### 第二步：安装 PyTorch（CUDA 12.8）
+### Step 2: Install PyTorch for CUDA 12.8
 
 ```powershell
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
 
-### 第三步：安装 MuJoCo Warp
+### Step 3: Install MuJoCo Warp
 
 ```powershell
 pip install mujoco-warp
 ```
 
-### 第四步：安装项目依赖
+### Step 4: Install project dependencies
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-## 运行命令
+## Run Commands
+
+### Run the 2D realtime LBM controller:
 
 ```powershell
 python tools/lbm2d_realtime_control.py --config configs/realtime_2d/eel2d.json
 ```
+<!-- 
+Export a 2D Karman vortex street around a fixed cylinder:
+
+```powershell
+python tools\lbm_karman_vortex_2d.py --output outputs\karman_vortex_2d.mp4 --nx 600 --ny 200 --steps 3600 --warmup-steps 400 --render-every 2 --u0 0.04 --re 100 --radius 15
+```
+
+Useful options:
+
+- `--re`: Reynolds number based on cylinder diameter. `80` to `200` is a good range for visible vortex shedding.
+- `--u0`: inlet lattice velocity.
+- `--radius`: cylinder radius in lattice cells.
+- `--vmax`: fixed red/white/blue vorticity color range.
+- `--warmup-steps`: initial simulation steps skipped before video recording. -->
+
+### Export a 3D LBM rendering video. 
 
 
-## JSON 配置说明
+2D projected vorticity video:
 
-2D 实时控制入口使用 JSON 文件配置场景、LBM 网格、渲染、键盘控制和预设动作。配置文件位于：
+```powershell
+python tools\lbm3d_realtime_control.py --config configs\realtime_3d\eel3d.json --preset forward --export-lbm outputs\eel_lbm_topdown.mp4 --export-steps 120 --record-fps 30 --render-type vorticity --view-mode topdown
+
+```
+
+Recommended 3D eel vorticity slice rendering:
+
+```powershell
+python tools\lbm3d_realtime_control.py --config configs\realtime_3d\eel3d.json --preset forward --export-lbm outputs\eel_lbm_orbit_slice9.mp4 --export-steps 480 --record-fps 30 --view-mode orbit --volume-render-mode slices --volume-stride 1 --volume-slice-count 15 --volume-color-axis z --volume-slice-alpha 0.15 --volume-vmax-percentile 98
+
+```
+
+This preset uses full-resolution volume sampling (`--volume-stride 1`), 15 transparent slices, fixed global `z` vorticity coloring, and a lower color percentile so weaker vortices remain visible.
+
+Common export options:
+
+- `--export-lbm`: Output `.mp4` path. When enabled, no realtime window is opened; the program exits after export.
+- `--export-steps`: Number of simulation steps.
+- `--export-render-every`: Capture one LBM frame every N simulation steps.
+- `--record-fps`: Exported video FPS.
+- `--render-type`: `vorticity` or `velocity`. `orbit` mode always renders a 3D vorticity volume.
+- `--view-mode`: `topdown`, `max_topdown`, `side`, `front`, or `orbit`.
+- `--volume-stride`: Downsampling stride for `orbit` volume rendering. Use `1` for best quality, `2` for preview, and larger values for speed.
+- `--volume-render-mode`: `slices` renders stacked full-field vorticity slices; `isosurface` renders signed red/blue vorticity surfaces; `points` renders only thresholded high-vorticity points.
+- `--volume-slice-axis`: Slice stacking axis for `slices` mode: `x`, `y`, or `z`.
+- `--volume-slice-count`: Number of slices rendered in `slices` mode.
+- `--volume-slice-alpha`: Slice opacity. Use lower values when rendering many slices, for example `0.15` for 15 slices.
+- `--volume-vmax-percentile`: Color normalization percentile for the red/white/blue vorticity map. Lower values make weaker vortices more visible.
+- `--volume-color-axis`: Fixed global vorticity component used for red/blue coloring in `orbit` mode: `x`, `y`, or `z`. Default is `z`, matching the usual 2D vorticity convention.
+- `--volume-iso-min-percentile`, `--volume-iso-percentile`, `--volume-iso-levels`, `--volume-iso-alpha`: Control the multi-layer transparent isosurface renderer.
+- `--volume-percentile`: In `points` mode, only vorticity points above this percentile are shown.
+- `--volume-max-points`: Maximum number of vorticity points drawn in `points` mode.
+- `--orbit-azim-speed`: Camera rotation angle per exported frame in `orbit` mode. Default is `0`, which keeps the camera fixed.
+- `--export-no-overlay`: Disable text overlay.
+
+### 3D JSON config
+
+`tools\lbm3d_realtime_control.py` does not read the legacy YAML config. The 3D model, LBM parameters, keyboard bindings, task mapping, and preset actions are loaded from JSON. The default eel config is:
+
+```text
+configs/realtime_3d/eel3d.json
+```
+
+Important fields:
+
+- `model.env_type`: 3D environment type, for example `eel_multitask`.
+- `model.mjcf_path`: MuJoCo XML model path.
+- `model.root_link`: Root body used for LBM/MuJoCo alignment.
+- `lbm`: 3D grid size, `lbm_scale`, fluid density, and coupling substeps.
+- `control.control_mode`: Eel uses `wave` for 5-dimensional traveling-wave actions.
+- `control.task_by_preset`: Maps preset names to multitask targets such as `forward` or `turn_left`.
+- `controls`: Keyboard-to-preset mapping.
+- `presets.action_keys`: Defines the order used to convert preset dictionaries into action vectors.
+- `presets.actions`: Named preset action dictionaries.
+
+## JSON Configuration Guide
+
+The 2D realtime control entry point uses a JSON file to configure the scene, LBM grid, rendering, keyboard bindings, and preset actions. Example configs are located at:
+
 
 ```text
 configs/realtime_2d/fish2d.json
 configs/realtime_2d/eel2d.json
 ```
 
-顶层结构：
+Top-level structure:
 
 ```json
 {
@@ -57,11 +133,11 @@ configs/realtime_2d/eel2d.json
 }
 ```
 
-### `env`：环境和模型
+### `env`: Environment and model
 
-`env` 指定使用哪个环境类、哪个 MuJoCo XML，以及哪些刚体参与 2D LBM 投影。
+`env` selects the environment class, MuJoCo XML, and the rigid bodies that participate in the 2D LBM projection.
 
-fish 示例：
+Fish example:
 
 ```json
 "env": {
@@ -70,7 +146,7 @@ fish 示例：
 }
 ```
 
- eel 示例：
+Eel example:
 
 ```json
 "env": {
@@ -82,18 +158,18 @@ fish 示例：
 }
 ```
 
-字段说明：
+Fields:
 
-- `class`：环境类名。常用：`FishLBMEnv`、`GenericLBM2DEnv`。
-- `xml_path`：MuJoCo XML 路径，相对于项目根目录。
-- `solid_config`：`GenericLBM2DEnv` 使用，用来把 XML 里的多个 body 映射到 2D LBM 固体。
-  - `solid_id`：LBM 里的固体编号，从 `0` 开始。
-  - `body_id`：MuJoCo body id。
-  - `body_or_geom_name`：body 或 geom 名字。
-  - `lbm_position`：初始 LBM 网格坐标 `[x, y]`。
-  - `is_body`：`true` 表示按 body 读取。
+- `class`: Environment class name. Common values: `FishLBMEnv`, `GenericLBM2DEnv`.
+- `xml_path`: MuJoCo XML path, relative to the project root.
+- `solid_config`: Used by `GenericLBM2DEnv` to map XML bodies into 2D LBM solids.
+  - `solid_id`: Solid index in the LBM solver, starting from `0`.
+  - `body_id`: MuJoCo body id.
+  - `body_or_geom_name`: Body or geom name.
+  - `lbm_position`: Initial LBM grid position `[x, y]`.
+  - `is_body`: `true` means the entry refers to a body.
 
-### `lbm`：LBM 网格和仿真步数
+### `lbm`: LBM grid and simulation substeps
 
 ```json
 "lbm": {
@@ -104,22 +180,22 @@ fish 示例：
 }
 ```
 
-字段说明：
+Fields:
 
-- `nx`：LBM 网格宽度。
-- `ny`：LBM 网格高度。
-- `lbm_scale`：MuJoCo 到 LBM 网格的尺度系数。
-- `per_frame_steps`：每个控制 step 内执行多少个 LBM/MuJoCo 耦合子步。越大越稳定但越慢。
+- `nx`: LBM grid width.
+- `ny`: LBM grid height.
+- `lbm_scale`: Scale factor from MuJoCo coordinates to LBM grid coordinates.
+- `per_frame_steps`: Number of LBM/MuJoCo coupling substeps per control step. Larger values can improve stability but are slower.
 
-命令行可覆盖：
+Command-line overrides:
 
 ```powershell
 --nx 400 --ny 600 --lbm-scale 0.25 --per-frame-steps 8
 ```
 
-### `render`：显示窗口
+### `render`: Display window
 
-当前 2D 界面左侧显示 LBM，右侧显示控制信号进度条。
+The current 2D UI shows LBM rendering on the left and control-signal bars on the right.
 
 ```json
 "render": {
@@ -133,19 +209,19 @@ fish 示例：
 }
 ```
 
-字段说明：
+Fields:
 
-- `type`：LBM 可视化类型，可选：`vorticity`、`velocity`、`solid_boundary`。
-- `output_height`：窗口输出高度。
-- `control_panel_width`：右侧控制信号面板宽度。默认约为 `output_height * 0.375`。
-- `vmax_scale`：OpenCV 后端颜色映射强度缩放。
-- `opengl_lbm_vmax`：OpenGL 后端 LBM 颜色范围。
-- `window_name`：窗口标题。
-- `record_fps`：录制视频帧率。
+- `type`: LBM visualization type. Options: `vorticity`, `velocity`, `solid_boundary`.
+- `output_height`: Output window height.
+- `control_panel_width`: Width of the right-side control-signal panel. Default is approximately `output_height * 0.375`.
+- `vmax_scale`: Colormap intensity scale for the OpenCV backend.
+- `opengl_lbm_vmax`: LBM color range for the OpenGL backend.
+- `window_name`: Window title.
+- `record_fps`: Video recording FPS.
 
-说明：旧配置里的 `mujoco_width`、`mujoco_height`、`mujoco_background_rgb`、`camera` 等字段现在对默认 LBM+控制信号界面不是必需项。
+Note: Old fields such as `mujoco_width`, `mujoco_height`, `mujoco_background_rgb`, and `camera` are not required for the default LBM + control-signal UI.
 
-### `control`：控制时间和动作系数
+### `control`: Control timing and action gain
 
 ```json
 "control": {
@@ -158,30 +234,30 @@ fish 示例：
 }
 ```
 
-字段说明：
+Fields:
 
-- `dt`：预设动作波形的时间步长。
-- `warmup_steps`：启动时动作幅度从 0 逐步增大的步数。
-- `transition_steps`：切换 preset 时平滑过渡步数。
-- `start_mode`：启动时使用的 preset 名称，必须存在于 `presets`。
-- `action_gain`：动作倍率，最终动作会乘这个系数后再裁剪到 `[-1, 1]`。
-- `gain_step`：运行时按 `+` / `-` 调整动作倍率的步长。
+- `dt`: Time step used by preset waveform generation.
+- `warmup_steps`: Number of steps used to ramp action amplitude from zero at startup.
+- `transition_steps`: Number of smoothing steps used when switching presets.
+- `start_mode`: Preset used at startup. It must exist in `presets`.
+- `action_gain`: Multiplier applied to generated actions before clipping to `[-1, 1]`.
+- `gain_step`: Step size for runtime `+` / `-` action-gain adjustment.
 
-运行时快捷键：
+Runtime keys:
 
-- `+` 或 `=`：增大 `action_gain`
-- `-` 或 `_`：减小 `action_gain`
-- `Space`：暂停/继续
-- `R`：重置
-- `Q` 或 `Esc`：退出
+- `+` or `=`: Increase `action_gain`.
+- `-` or `_`: Decrease `action_gain`.
+- `Space`: Pause/resume.
+- `R`: Reset.
+- `Q` or `Esc`: Quit.
 
-命令行可覆盖：
+Command-line overrides:
 
 ```powershell
 --control-dt 0.01 --warmup-steps 15 --transition-steps 36 --start-mode idle --action-gain 1.0 --gain-step 0.1
 ```
 
-### `controls`：键盘到动作模式的映射
+### `controls`: Keyboard-to-preset mapping
 
 ```json
 "controls": {
@@ -194,13 +270,13 @@ fish 示例：
 }
 ```
 
-左边是键盘按键，右边是 `presets` 里的 preset 名称。
+The key is the keyboard input, and the value is the preset name from `presets`.
 
-### `presets`：预设动作
+### `presets`: Preset actions
 
-`presets` 定义每种模式下的动作生成方式。`controls` 和 `start_mode` 引用的名称必须存在于这里。
+`presets` defines how each action mode is generated. Any name referenced by `controls` or `start_mode` must exist here.
 
-#### `constant`：常量动作
+#### `constant`: Constant action
 
 ```json
 "idle": {
@@ -209,12 +285,12 @@ fish 示例：
 }
 ```
 
-- `values` 长度必须等于 actuator 数量。
-- 常用于 `idle`。
+- `values` length must match the actuator count.
+- Commonly used for `idle`.
 
-#### `sine`：通用正弦动作
+#### `sine`: Generic sine action
 
-fish 示例：
+Fish example:
 
 ```json
 "forward": {
@@ -226,13 +302,13 @@ fish 示例：
 }
 ```
 
-- `components` 数量必须等于 actuator 数量。
-- `amp`：振幅。
-- `freq`：频率。
-- `phase`：相位。
-- `bias`：偏置，用于转向等。
+- `components` length must match the actuator count.
+- `amp`: Amplitude.
+- `freq`: Frequency.
+- `phase`: Phase offset.
+- `bias`: Offset, often used for turning.
 
-#### `eel_wave`：eel traveling wave 动作
+#### `eel_wave`: Eel traveling-wave action
 
 ```json
 "forward": {
@@ -246,7 +322,7 @@ fish 示例：
 }
 ```
 
-`eel_wave` 假设 actuator 按 yaw/roll 成对排列：
+`eel_wave` assumes actuators are arranged in yaw/roll pairs:
 
 ```text
 u0  = joint1_yaw
@@ -256,18 +332,18 @@ u3  = joint2_roll
 ...
 ```
 
-字段说明：
+Fields:
 
-- `A`：yaw 波幅。
-- `omega`：归一化频率方向和大小。
-- `omega_max`：最大角频率。
-- `k_wave`：归一化波数。
-- `head_bias`：头部偏置，用于转向。
-- `roll`：roll 通道常量。当前默认 `0.0`，所以奇数 `u1/u3/...` 不摆动。
-- `head_amp`：可选，头部波幅比例，默认 `0.05`。
-- `k_max`：可选，最大波数比例，默认 `1.5`。
+- `A`: Yaw wave amplitude.
+- `omega`: Normalized frequency direction and magnitude.
+- `omega_max`: Maximum angular frequency.
+- `k_wave`: Normalized wave number.
+- `head_bias`: Head bias, used for turning.
+- `roll`: Constant roll command. The default is `0.0`, so odd-numbered channels such as `u1/u3/...` do not oscillate.
+- `head_amp`: Optional head amplitude ratio. Default: `0.05`.
+- `k_max`: Optional maximum wave-number scale. Default: `1.5`.
 
-### 最小配置模板
+### Minimal config template
 
 ```json
 {

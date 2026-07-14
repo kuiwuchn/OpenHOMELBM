@@ -1,0 +1,3492 @@
+defaults:
+
+  logdir: null
+  traindir: null
+  evaldir: null
+  offline_traindir: ''
+  offline_evaldir: ''
+  seed: 0
+  deterministic_run: False
+  steps: 1e6
+  parallel: False
+  eval_every: 24000
+  eval_episode_num: 4
+  log_every: 1e4
+  reset_every: 0
+  device: 'cuda:0'
+  compile: True
+  precision: 32
+  debug: False
+  video_pred_log: True
+  checkpoint_every: 0  # Save numbered checkpoints every N env steps (0 = disabled)
+
+  # Environment
+  task: 'dmc_walker_walk'
+  size: [64, 64]
+  envs: 1
+  action_repeat: 2
+  time_limit: 1000
+  grayscale: False
+  prefill: 2500
+  reward_EMA: True
+
+  # Model
+  dyn_hidden: 512
+  dyn_deter: 512
+  dyn_stoch: 32
+  dyn_discrete: 32
+  dyn_rec_depth: 1
+  dyn_mean_act: 'none'
+  dyn_std_act: 'sigmoid2'
+  dyn_min_std: 0.1
+  grad_heads: ['decoder', 'reward', 'cont']
+  units: 512
+  act: 'SiLU'
+  norm: True
+  encoder:
+    {mlp_keys: '$^', cnn_keys: 'image', act: 'SiLU', norm: True, cnn_depth: 32, kernel_size: 4, minres: 4, mlp_layers: 5, mlp_units: 1024, symlog_inputs: True}
+  decoder:
+    {mlp_keys: '$^', cnn_keys: 'image', act: 'SiLU', norm: True, cnn_depth: 32, kernel_size: 4, minres: 4, mlp_layers: 5, mlp_units: 1024, cnn_sigmoid: False, image_dist: mse, vector_dist: symlog_mse, outscale: 1.0}
+  actor:
+    {layers: 2, dist: 'normal', entropy: 3e-4, unimix_ratio: 0.01, std: 'learned', min_std: 0.1, max_std: 1.0, temp: 0.1, lr: 3e-5, eps: 1e-5, grad_clip: 100.0, outscale: 1.0}
+  critic:
+    {layers: 2, dist: 'symlog_disc', slow_target: True, slow_target_update: 1, slow_target_fraction: 0.02, lr: 3e-5, eps: 1e-5, grad_clip: 100.0, outscale: 0.0}
+  reward_head:
+    {layers: 2, dist: 'symlog_disc', loss_scale: 1.0, outscale: 0.0}
+  cont_head:
+    {layers: 2, loss_scale: 1.0, outscale: 1.0}
+  dyn_scale: 0.5
+  rep_scale: 0.1
+  kl_free: 1.0
+  weight_decay: 0.0
+  unimix_ratio: 0.01
+  initial: 'learned'
+
+  # Training
+  batch_size: 16
+  batch_length: 64
+  train_ratio: 512
+  pretrain: 100
+  model_lr: 1e-4
+  opt_eps: 1e-8
+  grad_clip: 1000
+  dataset_size: 1000000
+  opt: 'adam'
+
+  # Behavior.
+  discount: 0.997
+  discount_lambda: 0.95
+  imag_horizon: 15
+  imag_gradient: 'dynamics'
+  imag_gradient_mix: 0.0
+  eval_state_mean: False
+
+  # Exploration
+  expl_behavior: 'greedy'
+  expl_until: 0
+  expl_extr_scale: 0.0
+  expl_intr_scale: 1.0
+
+  # Exploration noise type: 'normal' (independent Gaussian) or 'ou' (Ornstein-Uhlenbeck)
+  explore_noise: 'normal'
+  ou_theta: 0.15     # OU mean-reversion speed (higher = faster revert to mean)
+  ou_sigma: 0.3      # OU volatility (higher = larger exploration range)
+  ou_dt: 1.0         # OU time step
+  disag_target: 'stoch'
+  disag_log: True
+  disag_models: 10
+  disag_offset: 1
+  disag_layers: 4
+  disag_units: 400
+  disag_action_cond: False
+
+lbm:
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  # time_limit: 500
+  prefill: 2000
+  # batch_size: 32
+  # batch_length: 64
+  train_ratio: 512
+  # eval_every: 16e3
+  eval_episode_num: 4
+  # log_every: 16e3
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+starfish:
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_episode_num: 4
+  video_pred_log: false
+  env_type: 'starfish'
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+fish_obstacle:
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_episode_num: 4
+  video_pred_log: false
+  env_type: 'fish_obstacle'
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D LBM Environment configs
+lbm3d:
+  steps: 1e6
+  action_repeat: 1
+  envs: 1
+  time_limit: 500
+  prefill: 1000
+  train_ratio: 512
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+fish3d:
+  env_type: 'fish3d'
+  time_limit: 1000
+  lbm_nx: 120
+  lbm_ny: 240
+  lbm_nz: 96
+  
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  # time_limit: 500
+  prefill: 8000
+  # batch_size: 32
+  # batch_length: 64
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 4
+  # log_every: 16e3
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# Starfish multi-goal environment
+starfish_mg:
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  time_limit: 2000
+  prefill: 8000
+  train_ratio: 512
+  eval_episode_num: 4
+  video_pred_log: false
+  env_type: 'starfish_mg'
+  lbm_nx: 600
+  lbm_ny: 600
+  goal_threshold: 0.05
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Fish multi-goal environment
+fish3d_mg:
+  env_type: 'fish3d_mg'
+  time_limit: 2000
+  lbm_nx: 120
+  lbm_ny: 120
+  lbm_nz: 120
+  goal_threshold: 0.08
+  
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 4
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Starfish multi-goal environment (planar swimmer, yaw-only)
+starfish3d_mg:
+  env_type: 'starfish3d_mg'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0  # Physical fluid density (kg/m³), 1000=water
+  goal_threshold: 0.08
+  single_goal_mode: false  # false: multi-goal (continuous, yaw-only planar)
+  goal_position: [0.5, 0.75, 0.5]  # normalized [x, y, z] for single goal mode
+  per_frame_steps: 10  # LBM-MuJoCo coupling iterations per step
+  
+  # Control mode: 'direct' (4-dim Yaw angles) or 'multi_sine' (A & C params)
+  control_mode: 'direct'
+  # Multi-sine parameters (only used when control_mode='multi_sine')
+  multi_sine_K: 3        # Number of frequency components
+  multi_sine_B_bar: 1.0  # Maximum frequency parameter
+  
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 4
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Starfish with Multi-Sine Control (频域PD控制)
+starfish3d_multi_sine:
+  env_type: 'starfish3d_mg'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 10
+  
+  # Multi-sine wave control
+  control_mode: 'multi_sine'
+  multi_sine_K: 3        # K=3: 3 frequency components
+  multi_sine_B_bar: 1.0  # B_j = j * B_bar / K
+  # Action dim = 4 * K * 2 = 24 (A: 12, C: 12)
+  
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 4
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Serial Fish multi-goal environment
+serial_fish:
+  env_type: 'serial_fish'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 200
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0  # Physical fluid density (kg/m³), 1000=water
+  goal_threshold: 0.08
+  single_goal_mode: true  # true: single goal (terminate on reach), false: multi-goal (continuous)
+  goal_position: [0.5, 0.75, 0.5]  # normalized [x, y, z] for single goal mode
+  
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 4
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Eel/Ribbon Fish multi-goal environment (鳗鱼/带鱼机器人)
+eel3d:
+  env_type: 'eel3d'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0  # Physical fluid density (kg/m³), 1000=water
+  goal_threshold: 0.08
+  single_goal_mode: true  # true: single goal (terminate on reach), false: multi-goal (continuous)
+  goal_position: [0.5, 0.75, 0.75]  # normalized [x, y, z] for single goal mode
+  per_frame_steps: 10  # LBM-MuJoCo coupling iterations per step
+  
+  # Control mode: 'direct' (7-dim Yaw angles) or 'multi_sine' (A & C params)
+  control_mode: 'direct'
+  # Multi-sine parameters (only used when control_mode='multi_sine')
+  multi_sine_K: 3        # Number of frequency components
+  multi_sine_B_bar: 1.0  # Maximum frequency parameter
+  
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 4
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Eel with Obstacle (Dreamer)
+eel3d_obstacle:
+  env_type: 'eel3d_obstacle'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.75]
+  per_frame_steps: 10
+  control_mode: 'direct'
+  obstacle_avoidance_weight: 5.0
+  obstacle_safe_radius: 0.12
+  obstacle_collision_radius: 0.05
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 4
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta Ray with Obstacle
+manta_obstacle:
+  env_type: 'manta_obstacle'
+  time_limit: 2000
+  lbm_nx: 300
+  lbm_ny: 300
+  lbm_nz: 100
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 10
+  obstacle_avoidance_weight: 1.0
+  obstacle_safe_radius: 0.10
+  obstacle_collision_radius: 0.07
+
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta Ray with Terrain Presets
+manta_terrain:
+  env_type: 'manta_terrain'
+  time_limit: 2000
+  lbm_nx: 300
+  lbm_ny: 300
+  lbm_nz: 100
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 10
+  obstacle_avoidance_weight: 1.0
+  obstacle_safe_radius: 0.10
+  obstacle_collision_radius: 0.07
+  terrain_variant: 'gate'
+
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta local-goal low-level training in a two-pillar figure-8 terrain scene
+manta_terrain_local_goal:
+  env_type: 'manta_terrain_local_goal'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Local-goal tracking settings
+  task_switch_interval: 0
+  enabled_tasks: [forward]
+  control_mode: 'direct'
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: false
+
+  # Keep the existing local-goal reward scales
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+
+  # Terrain / figure-8 scene
+  terrain_variant: 'figure8'
+  obstacle_collision_radius: 0.04
+  trajectory_points: 120
+  trajectory_lookahead: 6
+  trajectory_search_window: 18
+  trajectory_waypoint_threshold: 0.05
+  trajectory_radius_scale: 0.84
+  start_on_trajectory: true
+  trajectory_start_idx: 75
+  align_start_to_goal: true
+
+  # Control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # Dreamer training
+  logdir: 'logdir/manta_terrain_local_goal_figure8'
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta figure-8 local-goal training with reduced-order direct control
+manta_terrain_local_goal_reduced:
+  env_type: 'manta_terrain_local_goal'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Local-goal tracking settings
+  task_switch_interval: 0
+  enabled_tasks: [forward]
+  control_mode: 'direct'
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: false
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+
+  terrain_variant: 'figure8'
+  obstacle_collision_radius: 0.04
+  trajectory_points: 120
+  trajectory_lookahead: 6
+  trajectory_search_window: 18
+  trajectory_waypoint_threshold: 0.05
+  trajectory_radius_scale: 0.84
+  start_on_trajectory: true
+  trajectory_start_idx: 75
+  align_start_to_goal: true
+
+  # Reduced direct control: 11 actuators -> 5 grouped commands.
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  logdir: 'logdir/manta_terrain_local_goal_figure8_reduced'
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta Ray environment
+manta:
+  env_type: 'manta'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.75]
+  per_frame_steps: 10
+
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta Ray Multi-Task environment (locomotion skills)
+manta_multitask:
+  env_type: 'manta_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0    # 0.8 × 250 = 200 = 1.0 × 200: robot grid size unchanged
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0       # 0 = switch only at episode reset; >0 = switch every N steps
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'        # 'frequency' = Fourier coefficients, 'direct' = actuator target angles
+
+  # Task reward weights
+  reward_w_task: 1.0
+  reward_w_roll: 0.10           # keep posture penalties very gentle
+  reward_w_smooth: 0.015        # very small angular/control regularization
+  reward_w_offaxis: 0.02        # small task-irrelevant drift penalty
+
+  # Reward scales only (not hard target speeds)
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+
+  # Frequency-domain PD control (Paper Section 3 & 5)
+  # NN outputs (A, C) params → Fourier synthesis → θ* targets → MuJoCo PD actuators
+  k_harmonics: 2              # K: number of frequency components per group
+  b_bar: 1.0                  # B̄: max frequency multiplier
+  use_reduced_order: true     # Reduced-order: wing joints share control signals (11→5 groups)
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta Multi-Task (Dreamer — no speed targets + direction-distance tasks)
+manta_multitask_nospeed_dirdist:
+  env_type: 'manta_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  # Reward scales / regularization
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+
+  # No-speed + direction-distance goal reward
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+
+  # Control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # Dreamer training
+  logdir: 'logdir/manta_multitask_nospeed_dirdist'
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta Multi-Task with mid-episode switching (harder curriculum)
+manta_multitask_switch:
+  env_type: 'manta_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0    # 0.8 × 250 = 200: robot grid size unchanged
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200     # switch task every 200 steps within episode
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+
+  # Frequency-domain PD control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Manta hierarchical control:
+# high-level Dreamer selects one locomotion primitive every `skill_horizon` low-level steps.
+manta_hierarchical:
+  env_type: 'manta_hierarchical'
+  time_limit: 80               # macro steps, not low-level physics steps
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0    # 0.8 × 250 = 200: robot grid size unchanged
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Frozen low-level multitask controller
+  lowlevel_logdir: 'logdir/manta_multitask'
+  lowlevel_configs: [lbm3d, manta_multitask]
+  skill_horizon: 25
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  # High-level navigation task
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  goal_region_min: [0.15, 0.45, 0.20]
+  goal_region_max: [0.85, 0.85, 0.80]
+  goal_threshold: 0.08
+
+  # High-level reward
+  progress_reward_scale: 10.0
+  success_bonus: 5.0
+  time_penalty: 0.01
+  switch_penalty: 0.01
+  terminated_penalty: 1.0
+  boundary_margin_penalty_scale: 0.15
+  soft_boundary_margin: 0.12
+
+  # Low-level env reward scales kept only for frozen skill execution
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # Dreamer high-level policy should output one-hot skill choices
+  actor:
+    {layers: 2, dist: 'onehot', entropy: 1e-3, unimix_ratio: 0.01, std: 'learned', min_std: 0.1, max_std: 1.0, temp: 0.1, lr: 3e-5, eps: 1e-5, grad_clip: 100.0, outscale: 1.0}
+
+  steps: 5e5
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Sea Turtle environment
+turtle:
+  env_type: 'turtle'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Sea Turtle Multi-Task environment (locomotion skills, 9 DOF)
+turtle_multitask:
+  env_type: 'turtle_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0       # 0 = switch only at episode reset; >0 = switch every N steps
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'           # 'frequency' = Fourier coefficients, 'direct' = actuator targets, 'wave' = 8-dim physics params
+  # Task reward weights
+  reward_w_task: 1.0
+  reward_w_roll: 0.05
+  reward_w_smooth: 0.008
+  reward_w_offaxis: 0.01
+
+  # Reward scales
+  target_forward_vel: 0.05
+  target_yaw_rate: 0.03
+  target_vertical_vel: 0.03
+
+  # Frequency-domain PD control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true       # 9 joints → 5 groups (2 flap + 2 rotate + 1 tail)
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Sea Turtle Multi-Task with mid-episode task switching (full-size)
+turtle_multitask_switch:
+  env_type: 'turtle_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200     # switch task every 200 steps within episode
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+
+  # Task reward weights
+  reward_w_task: 1.0
+  reward_w_roll: 0.05
+  reward_w_smooth: 0.008
+  reward_w_offaxis: 0.01
+
+  # Reward scales
+  target_forward_vel: 0.05
+  target_yaw_rate: 0.03
+  target_vertical_vel: 0.03
+
+  # Frequency-domain PD control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+  # Guided prefill: inject heuristic actions during prefill for better exploration
+  # Each preset is [A_flap, omega_flap, A_rot, stroke_asym, flap_asym]
+  prefill_guided_ratio: 0.5      # 50% of prefill steps use guided actions
+  prefill_guided_noise: 0.15     # Gaussian noise std added to presets
+  prefill_guided_presets:
+    - [0.90, 0.90, 0.70, 0.00, 0.00]    # forward
+    - [0.80, 0.65, 0.70, 0.00, 0.80]    # turn_left
+    - [0.80, 0.65, 0.70, 0.00, -0.80]   # turn_right
+    - [1.00, 0.80, 0.80, 0.80, 0.00]    # ascend
+    - [1.00, 0.80, 0.80, -0.80, 0.00]   # descend
+    - [0.25, 0.20, 0.10, 0.00, 0.00]    # glide (low energy)
+
+  # OU noise for temporally correlated exploration (wave control needs smooth actions)
+  explore_noise: 'ou'
+  ou_theta: 0.15     # mean-reversion speed: lower = smoother, longer exploration segments
+  ou_sigma: 0.3      # volatility: controls exploration range around actor mean
+  ou_dt: 1.0         # time step
+
+# 3D Sea Turtle Multi-Task with mid-episode switching (lowpower training)
+turtle_multitask_switch_lowpower:
+  env_type: 'turtle_multitask'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 150
+  lbm_nz: 60
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200     # switch task every 200 steps within episode
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.05
+  reward_w_smooth: 0.008
+  reward_w_offaxis: 0.01
+  target_forward_vel: 0.05
+  target_yaw_rate: 0.03
+  target_vertical_vel: 0.03
+
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # ── Reduced training footprint ──
+  steps: 2e6
+  action_repeat: 1
+  envs: 2                        # ↓ from 4 → 2 parallel worlds
+  prefill: 2000                   # ↓ from 4000 (fewer envs → less prefill needed)
+  batch_size: 8                   # ↓ from 16
+  batch_length: 48                # ↓ from 64
+  train_ratio: 256                # ↓ from 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  # ── Smaller Dreamer world model ──
+  dyn_hidden: 256                 # ↓ from 512
+  dyn_deter: 256                  # ↓ from 512
+  dyn_stoch: 24                   # ↓ from 32
+  dyn_discrete: 24                # ↓ from 32
+  units: 256                      # ↓ from 512 (MLP hidden size for actor/critic/heads)
+  imag_horizon: 10                # ↓ from 15
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# ============================================================
+# 3D Torus (Ring) Robot — 12 segments, 24 DOF (12 bend + 12 wave)
+# Ring in XZ plane, Y = forward (ring normal)
+# ============================================================
+
+# Torus single-goal (navigate to goal point)
+torus:
+  env_type: 'torus'
+  time_limit: 2000
+  lbm_nx: 120
+  lbm_ny: 120
+  lbm_nz: 120
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# Torus multi-task (velocity-based locomotion skills, wave control)
+torus_multitask:
+  env_type: 'torus_multitask'
+  time_limit: 2000
+  lbm_nx: 120
+  lbm_ny: 120
+  lbm_nz: 120
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0       # 0 = switch only at episode reset; >0 = switch every N steps
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'          # 'wave' = 7-dim ring pulsation + traveling wave, 'direct' = 4-dim grouped
+
+  # Task reward weights
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+
+  # Reward scales
+  target_forward_vel: 0.08
+  target_yaw_rate: 0.10
+  target_vertical_vel: 0.04
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# Torus multi-task with mid-episode switching (lowpower training)
+torus_multitask_switch_lowpower:
+  env_type: 'torus_multitask'
+  time_limit: 2000
+  lbm_nx: 80
+  lbm_ny: 80
+  lbm_nz: 80
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200     # switch task every 200 steps within episode
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.08
+  target_yaw_rate: 0.10
+  target_vertical_vel: 0.04
+
+  # ── Reduced training footprint ──
+  steps: 2e6
+  action_repeat: 1
+  envs: 2                        # ↓ from 4 → 2 parallel worlds
+  prefill: 2000                   # ↓ from 4000 (fewer envs → less prefill needed)
+  batch_size: 8                   # ↓ from 16
+  batch_length: 48                # ↓ from 64
+  train_ratio: 256                # ↓ from 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  # ── Smaller Dreamer world model ──
+  dyn_hidden: 256                 # ↓ from 512
+  dyn_deter: 256                  # ↓ from 512
+  dyn_stoch: 24                   # ↓ from 32
+  dyn_discrete: 24                # ↓ from 32
+  units: 256                      # ↓ from 512 (MLP hidden size for actor/critic/heads)
+  imag_horizon: 10                # ↓ from 15
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# Torus multi-task direct control mode (4-dim grouped)
+torus_multitask_direct:
+  env_type: 'torus_multitask'
+  time_limit: 2000
+  lbm_nx: 120
+  lbm_ny: 120
+  lbm_nz: 120
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'         # 4-dim grouped control
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.08
+  target_yaw_rate: 0.10
+  target_vertical_vel: 0.04
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Tuna-like Fish (4-segment tail + 2 pairs fins, 16 DOF)
+tuna:
+  env_type: 'tuna'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Tuna Multi-Task environment (locomotion skills)
+tuna_multitask:
+  env_type: 'tuna_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0       # 0 = switch only at episode reset; >0 = switch every N steps
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'frequency'     # learnable-omega Fourier synthesis → MuJoCo PD
+
+  # Task reward weights (tuned for tuna: slender body, 16 DOF, tail-driven)
+  reward_w_task: 1.0
+  reward_w_roll: 0.15           # highest: slender fusiform body is very roll-prone
+  reward_w_smooth: 0.025        # highest: 16-DOF serial chain amplifies end-effector
+  reward_w_offaxis: 0.03        # higher: tail swing causes lateral drift
+
+  # Target velocities (tuna-specific)
+  target_forward_vel: 0.10      # lowered from 0.15: 4-segment tail has limited thrust area
+  target_yaw_rate: 0.12         # fins + tail cooperative turning
+  target_vertical_vel: 0.08     # 4 pairs of fins provide direct vertical thrust
+
+  # Frequency-domain PD control with learnable omega
+  k_harmonics: 2
+  use_reduced_order: true       # 16 joints → 5 groups (flap L/R + rotation sym + tail yaw/pitch)
+  omega_min: 1.0                # ~0.16 Hz slow cruise
+  omega_max: 8.0                # ~1.3 Hz fast sprint (reduced for LBM stability)
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Tuna Multi-Task with mid-episode switching (harder curriculum)
+tuna_multitask_switch:
+  env_type: 'tuna_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200     # switch task every 200 steps within episode
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'frequency'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.025
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.12
+  target_vertical_vel: 0.08
+
+  # Frequency-domain PD control with learnable omega
+  k_harmonics: 2
+  use_reduced_order: true
+  omega_min: 1.0
+  omega_max: 8.0
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# ── Low-power Tuna configs (for machines with limited PSU / thermal headroom) ──
+# Key changes vs standard tuna_multitask:
+#   1. LBM grid:  200×200×80 → 150×150×60  (voxels ↓58%, biggest GPU saver)
+#   2. Envs:      4 → 2                     (VRAM & compute ↓50%)
+#   3. Dreamer:   512-unit → 256-unit        (params ↓75%)
+#   4. Batch:     16×64 → 8×48              (training memory ↓63%)
+#   5. train_ratio: 512 → 256               (gradient steps per env step ↓50%)
+#   6. imag_horizon: 15 → 10                (imagination rollout shorter)
+# Expected GPU utilization: ~40-55% of standard config.
+
+tuna_multitask_lowpower:
+  env_type: 'tuna_multitask'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 150
+  lbm_nz: 60
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings (same as standard)
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'frequency'
+
+  # Reward weights (unchanged — physics behavior should stay the same)
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.025
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.12
+  target_vertical_vel: 0.08
+
+  k_harmonics: 2
+  use_reduced_order: true
+  omega_min: 1.0
+  omega_max: 8.0
+
+  # ── Reduced training footprint ──
+  steps: 2e6
+  action_repeat: 1
+  envs: 2                        # ↓ from 4 → 2 parallel worlds
+  prefill: 2000                   # ↓ from 4000 (fewer envs → less prefill needed)
+  batch_size: 8                   # ↓ from 16
+  batch_length: 48                # ↓ from 64
+  train_ratio: 256                # ↓ from 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  # ── Smaller Dreamer world model ──
+  dyn_hidden: 256                 # ↓ from 512
+  dyn_deter: 256                  # ↓ from 512
+  dyn_stoch: 24                   # ↓ from 32
+  dyn_discrete: 24                # ↓ from 32
+  units: 256                      # ↓ from 512 (MLP hidden size for actor/critic/heads)
+  imag_horizon: 10                # ↓ from 15
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+tuna_multitask_switch_lowpower:
+  env_type: 'tuna_multitask'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 150
+  lbm_nz: 60
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'frequency'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.025
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.12
+  target_vertical_vel: 0.08
+
+  k_harmonics: 2
+  use_reduced_order: true
+  omega_min: 1.0
+  omega_max: 8.0
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 2
+  prefill: 2000
+  batch_size: 8
+  batch_length: 48
+  train_ratio: 256
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# ── Tuna single-task debug configs (lightweight, for quick iteration) ──
+# Key changes vs standard tuna_multitask:
+#   1. LBM grid:  200×200×80 → 100×150×50  (voxels ↓77%)
+#   2. lbm_scale: 1.0 → 2.0                (2.0 × 100 = 200 = 1.0 × 200, keeps force_conversion identical)
+#   NOTE: ny=150 (not 100) because tuna body+tail spans ~46 LBM cells along Y;
+#         nz=50 (not 40) to give enough vertical room for ascend/descend.
+#   3. Single task only                     (no task switching overhead)
+#   4. time_limit: 2000 → 500              (shorter episodes)
+#   5. steps: 2e6 → 1e5                    (quick sanity check)
+#   6. envs: 1, minimal Dreamer model
+
+# Single-task debug: ONLY train FORWARD to verify basic tail-driven swimming
+tuna_forward_debug:
+  env_type: 'tuna_multitask'
+  time_limit: 500
+  lbm_nx: 100
+  lbm_ny: 150
+  lbm_nz: 50
+  lbm_scale: 2.0                  # 2.0 × 100 = 200 = standard's 1.0 × 200 (keeps force_conversion identical)
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  task_switch_interval: 0
+  enabled_tasks: [forward]        # SINGLE TASK: only forward
+  control_mode: 'frequency'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.025
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.12
+  target_vertical_vel: 0.08
+
+  k_harmonics: 2
+  use_reduced_order: true
+  omega_min: 1.0
+  omega_max: 8.0
+
+  steps: 1e5
+  action_repeat: 1
+  envs: 1
+  prefill: 500
+  batch_size: 8
+  batch_length: 32
+  train_ratio: 128
+  eval_every: 10000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# Single-task debug: ONLY train ASCEND to verify fin-driven vertical thrust
+tuna_ascend_debug:
+  env_type: 'tuna_multitask'
+  time_limit: 500
+  lbm_nx: 100
+  lbm_ny: 150
+  lbm_nz: 50
+  lbm_scale: 2.0                  # 2.0 × 100 = 200 = standard's 1.0 × 200 (keeps force_conversion identical)
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  task_switch_interval: 0
+  enabled_tasks: [ascend]         # SINGLE TASK: only ascend
+  control_mode: 'frequency'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.025
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.12
+  target_vertical_vel: 0.08
+
+  k_harmonics: 2
+  use_reduced_order: true
+  omega_min: 1.0
+  omega_max: 8.0
+
+  steps: 1e5
+  action_repeat: 1
+  envs: 1
+  prefill: 500
+  batch_size: 8
+  batch_length: 32
+  train_ratio: 128
+  eval_every: 10000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# Single-task debug: ONLY train TURN_LEFT to verify fin+tail cooperative turning
+tuna_turn_left_debug:
+  env_type: 'tuna_multitask'
+  time_limit: 500
+  lbm_nx: 100
+  lbm_ny: 150
+  lbm_nz: 50
+  lbm_scale: 2.0                  # 2.0 × 100 = 200 = standard's 1.0 × 200 (keeps force_conversion identical)
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  task_switch_interval: 0
+  enabled_tasks: [turn_left]      # SINGLE TASK: only turn_left
+  control_mode: 'frequency'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.025
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.12
+  target_vertical_vel: 0.08
+
+  k_harmonics: 2
+  use_reduced_order: true
+  omega_min: 1.0
+  omega_max: 8.0
+
+  steps: 1e5
+  action_repeat: 1
+  envs: 1
+  prefill: 500
+  batch_size: 8
+  batch_length: 32
+  train_ratio: 128
+  eval_every: 10000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+tuna_hierarchical_lowpower:
+  env_type: 'tuna_hierarchical'
+  time_limit: 80
+  lbm_nx: 150
+  lbm_ny: 150
+  lbm_nz: 60
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  lowlevel_logdir: 'logdir/tuna_multitask_lowpower'
+  lowlevel_configs: [lbm3d, tuna_multitask_lowpower]
+  skill_horizon: 25
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  goal_region_min: [0.15, 0.45, 0.20]
+  goal_region_max: [0.85, 0.85, 0.80]
+  goal_threshold: 0.08
+
+  progress_reward_scale: 10.0
+  success_bonus: 5.0
+  time_penalty: 0.01
+  switch_penalty: 0.01
+  terminated_penalty: 1.0
+  boundary_margin_penalty_scale: 0.15
+  soft_boundary_margin: 0.12
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.025
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.12
+  target_vertical_vel: 0.08
+  k_harmonics: 2
+  use_reduced_order: true
+  omega_min: 1.0
+  omega_max: 8.0
+
+  actor:
+    {layers: 2, dist: 'onehot', entropy: 1e-3, unimix_ratio: 0.01, std: 'learned', min_std: 0.1, max_std: 1.0, temp: 0.1, lr: 3e-5, eps: 1e-5, grad_clip: 100.0, outscale: 1.0}
+
+  steps: 5e5
+  action_repeat: 1
+  envs: 2
+  prefill: 1000
+  batch_size: 8
+  batch_length: 48
+  train_ratio: 256
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# 3D Tuna hierarchical control:
+# high-level Dreamer selects one locomotion primitive every `skill_horizon` low-level steps.
+tuna_hierarchical:
+  env_type: 'tuna_hierarchical'
+  time_limit: 80               # macro steps, not low-level physics steps
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Frozen low-level multitask controller
+  lowlevel_logdir: 'logdir/tuna_multitask'
+  lowlevel_configs: [lbm3d, tuna_multitask]
+  skill_horizon: 25
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  # High-level navigation task
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  goal_region_min: [0.15, 0.45, 0.20]
+  goal_region_max: [0.85, 0.85, 0.80]
+  goal_threshold: 0.08
+
+  # High-level reward
+  progress_reward_scale: 10.0
+  success_bonus: 5.0
+  time_penalty: 0.01
+  switch_penalty: 0.01
+  terminated_penalty: 1.0
+  boundary_margin_penalty_scale: 0.15
+  soft_boundary_margin: 0.12
+
+  # Low-level env reward scales kept only for frozen skill execution
+  reward_w_task: 1.0
+  reward_w_roll: 0.15
+  reward_w_smooth: 0.025
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.12
+  target_vertical_vel: 0.08
+  k_harmonics: 2
+  use_reduced_order: true
+  omega_min: 1.0
+  omega_max: 8.0
+
+  # Dreamer high-level policy should output one-hot skill choices
+  actor:
+    {layers: 2, dist: 'onehot', entropy: 1e-3, unimix_ratio: 0.01, std: 'learned', min_std: 0.1, max_std: 1.0, temp: 0.1, lr: 3e-5, eps: 1e-5, grad_clip: 100.0, outscale: 1.0}
+
+  steps: 5e5
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Clownfish (4-segment body, 6 DOF)
+clownfish:
+  env_type: 'clownfish'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Clownfish Multi-Task environment (locomotion skills)
+clownfish_multitask:
+  env_type: 'clownfish_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0       # 0 = switch only at episode reset; >0 = switch every N steps
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'        # 'frequency' = Fourier coefficients, 'direct' = actuator target angles
+
+  # Task reward weights (tuned for clownfish: smaller body, tail-driven)
+  reward_w_task: 1.0
+  reward_w_roll: 0.12           # slightly higher: slender body rolls easier
+  reward_w_smooth: 0.02         # higher: serial chain amplifies end-effector angular velocity
+  reward_w_offaxis: 0.03        # higher: tail swing causes lateral drift
+
+  # Target velocities (lower than manta: smaller body, less thrust area)
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.10
+  target_vertical_vel: 0.04
+
+  # Frequency-domain PD control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true       # 7 joints → 6 groups (caudal pitch separate for vertical control)
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Clownfish Multi-Task with mid-episode switching (harder curriculum)
+clownfish_multitask_switch:
+  env_type: 'clownfish_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200     # switch task every 200 steps within episode
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.12
+  reward_w_smooth: 0.02
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.10
+  target_vertical_vel: 0.04
+
+  # Frequency-domain PD control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Clownfish Multi-Task with physics-parameterized traveling wave control
+# Wave mode: 7-dim action [A, omega, k_wave, head_bias, pitch, caudal_pitch, caudal_twist]
+# Encodes carangiform swimming as an inductive bias — network learns 7 physical scalars.
+clownfish_multitask_wave:
+  env_type: 'clownfish_multitask'
+  time_limit: 2000
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0       # 0 = switch only at episode reset
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'          # physics-parameterized traveling wave (7-dim)
+
+  # Task reward weights
+  reward_w_task: 1.0
+  reward_w_roll: 0.12
+  reward_w_smooth: 0.02
+  reward_w_offaxis: 0.03
+
+  # Target velocities
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.10
+  target_vertical_vel: 0.04
+
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Clownfish hierarchical control:
+# high-level Dreamer selects one locomotion primitive every `skill_horizon` low-level steps.
+clownfish_hierarchical:
+  env_type: 'clownfish_hierarchical'
+  time_limit: 80               # macro steps, not low-level physics steps
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Frozen low-level multitask controller
+  lowlevel_logdir: 'logdir/clownfish_multitask'
+  lowlevel_configs: [lbm3d, clownfish_multitask]
+  skill_horizon: 25
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  # High-level navigation task
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  goal_region_min: [0.15, 0.45, 0.20]
+  goal_region_max: [0.85, 0.85, 0.80]
+  goal_threshold: 0.08
+
+  # High-level reward
+  progress_reward_scale: 10.0
+  success_bonus: 5.0
+  time_penalty: 0.01
+  switch_penalty: 0.01
+  terminated_penalty: 1.0
+  boundary_margin_penalty_scale: 0.15
+  soft_boundary_margin: 0.12
+
+  # Low-level env reward scales kept only for frozen skill execution
+  reward_w_task: 1.0
+  reward_w_roll: 0.12
+  reward_w_smooth: 0.02
+  reward_w_offaxis: 0.03
+  target_forward_vel: 0.10
+  target_yaw_rate: 0.10
+  target_vertical_vel: 0.04
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # Dreamer high-level policy should output one-hot skill choices
+  actor:
+    {layers: 2, dist: 'onehot', entropy: 1e-3, unimix_ratio: 0.01, std: 'learned', min_std: 0.1, max_std: 1.0, temp: 0.1, lr: 3e-5, eps: 1e-5, grad_clip: 100.0, outscale: 1.0}
+
+  steps: 5e5
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# ── Eel Debug Config: Small grid + single task for fast iteration ──
+# Purpose: Quick reward tuning & code validation (30-60 min instead of 10+ hours)
+# Key changes vs standard eel_multitask:
+#   1. LBM grid:  150×250×60 → 80×120×40  (voxels ↓80%, biggest GPU saver)
+#   2. Envs:      4 → 1                     (VRAM & compute ↓75%)
+#   3. Dreamer:   512-unit → 256-unit        (params ↓75%)
+#   4. Batch:     16×64 → 8×32              (training memory ↓75%)
+#   5. train_ratio: 512 → 128               (gradient steps per env step ↓75%)
+#   6. time_limit: 2000 → 500               (shorter episodes)
+#   7. steps:     2M → 100K                 (just enough to see reward trends)
+# Expected: ~30 min on a single GPU. Watch TensorBoard for reward trends.
+
+eel_multitask_debug:
+  env_type: 'eel_multitask'
+  time_limit: 500
+  lbm_nx: 80
+  lbm_ny: 120
+  lbm_nz: 40
+  lbm_scale: 0.9375              # 0.9375 × 80 = 75 = standard's 0.5 × 150 (keeps force_conversion identical)
+  fluid_density: 1000.0
+  per_frame_steps: 10              # restored to standard (5 was too few for stability)
+
+  # Multi-task settings (same as standard)
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+
+  # Reward weights (unchanged — physics behavior should stay the same)
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # ── Minimal training footprint ──
+  steps: 1e5
+  action_repeat: 1
+  envs: 1
+  prefill: 500
+  batch_size: 8
+  batch_length: 32
+  train_ratio: 128
+  eval_every: 10000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  # ── Smaller Dreamer world model ──
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# Single-task debug: ONLY train ASCEND to verify barrel-roll strategy
+eel_ascend_debug:
+  env_type: 'eel_multitask'
+  time_limit: 500
+  lbm_nx: 80
+  lbm_ny: 120
+  lbm_nz: 40
+  lbm_scale: 0.9375              # 0.9375 × 80 = 75 = standard's 0.5 × 150 (keeps force_conversion identical)
+  fluid_density: 1000.0
+  per_frame_steps: 10              # restored to standard (5 was too few for stability)
+
+  task_switch_interval: 0
+  enabled_tasks: [ascend]         # SINGLE TASK: only ascend
+  control_mode: 'wave'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  steps: 1e5
+  action_repeat: 1
+  envs: 1
+  prefill: 500
+  batch_size: 8
+  batch_length: 32
+  train_ratio: 128
+  eval_every: 10000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# Single-task debug: ONLY train FORWARD to verify basic swimming
+eel_forward_debug:
+  env_type: 'eel_multitask'
+  time_limit: 500
+  lbm_nx: 80
+  lbm_ny: 120
+  lbm_nz: 40
+  lbm_scale: 0.9375              # 0.9375 × 80 = 75 = standard's 0.5 × 150 (keeps force_conversion identical)
+  fluid_density: 1000.0
+  per_frame_steps: 10              # restored to standard (5 was too few for stability)
+
+  task_switch_interval: 0
+  enabled_tasks: [forward]        # SINGLE TASK: only forward
+  control_mode: 'wave'
+
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  steps: 1e5
+  action_repeat: 1
+  envs: 1
+  prefill: 500
+  batch_size: 8
+  batch_length: 32
+  train_ratio: 128
+  eval_every: 10000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# 3D Eel Multi-Task environment (12-segment, biomimetic grouped control)
+eel_multitask:
+  env_type: 'eel_multitask'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0       # 0 = switch only at episode reset; >0 = switch every N steps
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  # control_mode options:
+  #   'wave'      — physics-parameterized traveling wave, 5-dim [A, omega, k_wave, head_bias, roll]
+  #                 Built-in amplitude envelope + spatial phase gradient. Recommended.
+  #   'direct'    — 5-dim grouped targets (4 yaw groups + 1 roll), for ablation
+  #   'frequency' — 20-dim Fourier coefficients (5 groups x 2 harmonics x 2 params)
+  control_mode: 'wave'
+
+  # Task reward weights (tuned for eel: barrel-roll vertical strategy)
+  reward_w_task: 1.0
+  reward_w_roll: 0.20           # highest during FORWARD: 8-segment chain is very roll-prone
+  reward_w_smooth: 0.03         # highest: serial chain end-effector amplification
+  reward_w_offaxis: 0.04        # highest: traveling wave produces lateral force
+
+  # Target velocities (eel-specific, barrel-roll strategy)
+  target_forward_vel: 0.12      # higher than clownfish: 8-segment wave is efficient
+  target_yaw_rate: 0.08         # lowest: long body has large turning radius
+  target_vertical_vel: 0.05     # barrel-roll vertical: Yaw wave redirected upward
+
+  # Frequency-domain PD control (used when control_mode='frequency')
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true       # 22 joints → 5 groups (4 yaw groups + 1 unified roll group)
+
+  steps: 2e6
+  action_repeat: 4
+  envs: 4
+  prefill: 5000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  actor: {entropy: 1e-2}
+
+# 3D Eel Multi-Task with mid-episode switching (harder curriculum)
+eel_multitask_switch:
+  env_type: 'eel_multitask'
+  time_limit: 2000
+  # ── High-performance LBM grid (unchanged) ──
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200     # switch task every 200 steps within episode
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+
+  # Reward weights
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+
+  # Frequency-domain PD control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # ── High-performance training footprint ──
+  steps: 2e6
+  action_repeat: 4
+  envs: 4
+  prefill: 5000
+  batch_size: 16
+  batch_length: 64
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  # ── Full-size Dreamer world model ──
+  dyn_hidden: 512
+  dyn_deter: 512
+  dyn_stoch: 32
+  dyn_discrete: 32
+  units: 512
+  imag_horizon: 15
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+  # Guided prefill: inject heuristic wave actions during prefill for better exploration
+  # Each preset is [A, omega, k_wave, head_bias, roll]
+  prefill_guided_ratio: 0.5      # 50% of prefill steps use guided actions
+  prefill_guided_noise: 0.10     # Gaussian noise std added to presets
+  prefill_guided_presets:
+    - [0.80, -0.50, 0.50,  0.00, 0.00]    # forward (standard traveling wave)
+    - [0.70, -0.50, 0.50,  0.60, 0.00]    # turn_left (head bias +0.6)
+    - [0.70, -0.50, 0.50, -0.60, 0.00]    # turn_right (head bias -0.6)
+    - [0.80, -0.50, 0.50,  0.00, 0.60]    # ascend (barrel-roll +roll)
+    - [0.80, -0.50, 0.50,  0.00, -0.60]   # descend (barrel-roll -roll)
+    - [1.00, -1.00, 0.80,  0.00, 0.00]    # fast forward (high amplitude + freq)
+
+  # OU noise for temporally correlated exploration (wave control needs smooth actions)
+  explore_noise: 'ou'
+  ou_theta: 0.12     # slightly lower than turtle (0.15): eel's 8-segment chain needs smoother transitions
+  ou_sigma: 0.25     # slightly lower than turtle (0.3): eel wave is more sensitive to parameter jumps
+  ou_dt: 1.0         # time step
+
+# ── Low-power Eel switch configs (for machines with limited PSU / thermal headroom) ──
+# Key changes vs standard eel_multitask_switch:
+#   1. LBM grid:  150×250×60 → 120×200×50  (voxels ↓56%, biggest GPU saver)
+#   2. Envs:      2 → 1                     (fewer parallel envs)
+#   3. Dreamer:   512-unit → 256-unit        (params ↓~75%)
+#   4. Batch:     16×64 → 8×48              (training memory ↓~63%)
+#   5. train_ratio: 512 → 256               (gradient steps per env step ↓50%)
+#   6. imag_horizon: 15 → 10               (imagination rollout shorter)
+#   7. control_mode: wave → direct          (simpler control mode)
+# Reward weights & physics behavior are IDENTICAL to standard config.
+# Expected GPU utilization: ~40-55% of standard config.
+
+eel_multitask_switch_lowpower:
+  env_type: 'eel_multitask'
+  time_limit: 2000
+  lbm_nx: 120
+  lbm_ny: 200
+  lbm_nz: 50
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+  task_switch_interval: 200
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  # Reward weights (unchanged — physics behavior should stay the same)
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+
+  # Frequency-domain PD control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # ── Reduced training footprint ──
+  steps: 2e6
+  action_repeat: 1
+  envs: 1
+  prefill: 2000
+  batch_size: 8
+  batch_length: 48
+  train_ratio: 256
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  # ── Smaller Dreamer world model ──
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+  # Guided prefill: inject heuristic direct actions during prefill for better exploration
+  # Each preset is [head_yaw, front_yaw, mid_yaw, tail_yaw, all_roll]
+  prefill_guided_ratio: 0.5      # 50% of prefill steps use guided actions
+  prefill_guided_noise: 0.15     # Gaussian noise std added to presets
+  prefill_guided_presets:
+    - [ 0.00,  0.30,  0.50,  0.70, 0.00]    # forward (progressive wave, head→tail)
+    - [ 0.60,  0.30,  0.20,  0.50, 0.00]    # turn_left (head bias left + tail swing)
+    - [-0.60, -0.30, -0.20, -0.50, 0.00]    # turn_right (head bias right + tail swing)
+    - [ 0.00,  0.30,  0.50,  0.70, 0.60]    # ascend (wave + barrel-roll)
+    - [ 0.00,  0.30,  0.50,  0.70,-0.60]    # descend (wave + barrel-roll)
+
+# 3D Eel Multi-Task — no-speed direction-distance goal (Dreamer)
+eel_multitask_nospeed_dirdist:
+  env_type: 'eel_multitask'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+
+  # Reward scales / regularization
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+
+  # No-speed + direction-distance goal reward
+  # dist_min is small for cold-start (easy nearby goals to bootstrap forward swimming),
+  # dist_max is large to encourage sustained swimming once the agent is capable.
+  # goal_threshold is tightened to match the small-distance regime.
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_w_smooth: 0.15
+  direction_dist_w_offaxis: 0.0
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+
+  # Control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # Dreamer training
+  logdir: 'logdir/eel_multitask_nospeed_dirdist'
+  steps: 2e6
+  action_repeat: 1
+  envs: 4
+  prefill: 4000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Eel Multi-Task — no-speed direction-distance goal, low-power (Dreamer)
+eel_multitask_nospeed_dirdist_lowpower:
+  env_type: 'eel_multitask'
+  time_limit: 2000
+  lbm_nx: 120
+  lbm_ny: 200
+  lbm_nz: 50
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Multi-task settings
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+
+  # Reward scales / regularization
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+
+  # No-speed + direction-distance goal reward
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_w_smooth: 0.15
+  direction_dist_w_offaxis: 0.0
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+
+  # Control
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # ── Reduced training footprint ──
+  logdir: 'logdir/eel_multitask_nospeed_dirdist_lowpower'
+  steps: 2e6
+  action_repeat: 1
+  envs: 1
+  prefill: 2000
+  batch_size: 8
+  batch_length: 48
+  train_ratio: 256
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+
+  # ── Smaller Dreamer world model ──
+  dyn_hidden: 256
+  dyn_deter: 256
+  dyn_stoch: 24
+  dyn_discrete: 24
+  units: 256
+  imag_horizon: 10
+
+  encoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^', mlp_layers: 4, mlp_units: 512}
+
+# 3D Eel hierarchical control:
+# high-level Dreamer selects one locomotion primitive every `skill_horizon` low-level steps.
+eel_hierarchical:
+  env_type: 'eel_hierarchical'
+  time_limit: 80               # macro steps, not low-level physics steps
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  per_frame_steps: 10
+
+  # Frozen low-level multitask controller
+  lowlevel_logdir: 'logdir/eel_multitask'
+  lowlevel_configs: [lbm3d, eel_multitask]
+  skill_horizon: 25
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+
+  # High-level navigation task
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  goal_region_min: [0.15, 0.45, 0.20]
+  goal_region_max: [0.85, 0.85, 0.80]
+  goal_threshold: 0.08
+
+  # High-level reward
+  progress_reward_scale: 10.0
+  success_bonus: 5.0
+  time_penalty: 0.01
+  switch_penalty: 0.01
+  terminated_penalty: 1.0
+  boundary_margin_penalty_scale: 0.15
+  soft_boundary_margin: 0.12
+
+  # Low-level env reward scales kept only for frozen skill execution
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+
+  # Dreamer high-level policy should output one-hot skill choices
+  actor:
+    {layers: 2, dist: 'onehot', entropy: 1e-3, unimix_ratio: 0.01, std: 'learned', min_std: 0.1, max_std: 1.0, temp: 0.1, lr: 3e-5, eps: 1e-5, grad_clip: 100.0, outscale: 1.0}
+
+  steps: 5e5
+  action_repeat: 1
+  envs: 4
+  prefill: 2000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 1
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# 3D Eel with Multi-Sine Control (频域PD控制)
+eel3d_multi_sine:
+  env_type: 'eel3d'
+  time_limit: 2000
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 10
+  
+  # Multi-sine wave control
+  control_mode: 'multi_sine'
+  multi_sine_K: 3        # K=3: 3 frequency components
+  multi_sine_B_bar: 1.0  # B_j = j * B_bar / K
+  # Action dim = 7 * K * 2 = 42 (A: 21, C: 21)
+  
+  steps: 1e6
+  action_repeat: 1
+  envs: 4
+  prefill: 8000
+  train_ratio: 512
+  eval_every: 24000
+  eval_episode_num: 4
+  video_pred_log: false
+  encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+  decoder: {mlp_keys: '.*', cnn_keys: '$^'}
+
+# ============================================================
+# SB3 Training Defaults (used by train_sb3.py)
+# ============================================================
+sb3_defaults:
+  # Environment
+  env_type: 'starfish3d_mg'
+  nworld: 4
+  lbm_nx: 100
+  lbm_ny: 100
+  lbm_nz: 80
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 20
+  control_mode: 'direct'
+  multi_sine_K: 3
+  multi_sine_B_bar: 1.0
+  # Optional manta_multitask reward/task switches
+  disable_speed_targets: false
+  use_direction_dist_tasks: false
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  alive_cost: 0.0
+  termination_penalty: 1.0
+
+  # VecNormalize (observation & reward normalization, similar to Dreamer's RewardEMA)
+  normalize_obs: false
+  normalize_reward: false
+
+  # Training
+  algo: 'PPO'
+  steps: 1e5
+  seed: 42
+  device: 'cuda:0'
+  logdir: 'sb3_logs/default'
+  resume: false
+  save_freq: 10000
+  checkpoint_every: 0  # Save numbered checkpoints every N env steps (0 = disabled)
+  log_interval: 1
+
+  # Shared hyperparams  (aligned with DreamerV3 defaults for fair comparison)
+  lr: 3e-5
+  gamma: 0.997
+  batch_size: 64
+
+  # On-policy (PPO, TRPO)
+  n_steps: 512
+  n_epochs: 10
+  ent_coef: 0.01
+  gae_lambda: 0.95
+  clip_range: 0.2
+  lstm_hidden_size: 128
+  n_lstm_layers: 1
+  shared_lstm: false
+  enable_critic_lstm: true
+
+  # Off-policy (SAC, TD3, DDPG)
+  buffer_size: 1000000
+  tau: 0.005
+  learning_starts: 8000
+
+# --- SB3 per-environment presets ---
+# Override sb3_defaults by loading these with --configs
+
+# 3D Starfish (PPO recommended)
+sb3_starfish3d:
+  env_type: 'starfish3d_mg'
+  lbm_nx: 100
+  lbm_ny: 100
+  lbm_nz: 80
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 20
+  control_mode: 'direct'
+  steps: 1e5
+  logdir: 'sb3_logs/starfish3d'
+
+# 3D Starfish Multi-Sine control
+sb3_starfish3d_ms:
+  env_type: 'starfish3d_mg'
+  lbm_nx: 100
+  lbm_ny: 100
+  lbm_nz: 80
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 20
+  control_mode: 'multi_sine'
+  multi_sine_K: 3
+  multi_sine_B_bar: 1.0
+  steps: 1e5
+  logdir: 'sb3_logs/starfish3d_ms'
+
+# 3D Fish
+sb3_fish3d:
+  env_type: 'fish3d'
+  lbm_nx: 120
+  lbm_ny: 240
+  lbm_nz: 96
+  time_limit: 1000
+  steps: 1e5
+  logdir: 'sb3_logs/fish3d'
+
+# 3D Serial Fish
+sb3_serial_fish:
+  env_type: 'serial_fish3d'
+  lbm_nx: 150
+  lbm_ny: 200
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  steps: 1e5
+  logdir: 'sb3_logs/serial_fish'
+
+# 3D Eel  (aligned with dreamer eel3d for comparison)
+sb3_eel3d:
+  env_type: 'eel3d'
+  nworld: 4
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: false
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 10
+  control_mode: 'direct'
+  steps: 5e5
+  logdir: 'sb3_logs/eel3d'
+
+sb3_eel3d_rppo:
+  env_type: 'eel3d'
+  nworld: 4
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: false
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 10
+  control_mode: 'direct'
+  algo: 'RecurrentPPO'
+  steps: 5e5
+  logdir: 'sb3_logs/eel3d_rppo'
+  lstm_hidden_size: 128
+  n_lstm_layers: 1
+  shared_lstm: false
+  enable_critic_lstm: true
+
+# 3D Eel with Obstacle (SB3)
+sb3_manta_terrain:
+  env_type: 'manta_terrain'
+  nworld: 4
+  lbm_nx: 300
+  lbm_ny: 300
+  lbm_nz: 100
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 10
+  control_mode: 'direct'
+  obstacle_avoidance_weight: 1.0
+  obstacle_safe_radius: 0.10
+  obstacle_collision_radius: 0.07
+  terrain_variant: 'gate'
+  steps: 1e6
+  logdir: 'sb3_logs/manta_terrain_ppo'
+
+sb3_eel3d_obstacle:
+  env_type: 'eel3d_obstacle'
+  nworld: 4
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.75]
+  per_frame_steps: 10
+  control_mode: 'direct'
+  obstacle_avoidance_weight: 5.0
+  obstacle_safe_radius: 0.12
+  obstacle_collision_radius: 0.05
+  steps: 1e6
+  logdir: 'sb3_logs/eel3d_obstacle'
+
+# 3D Eel Multi-Sine
+sb3_eel3d_ms:
+  env_type: 'eel3d'
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  goal_threshold: 0.08
+  single_goal_mode: true
+  goal_position: [0.5, 0.75, 0.5]
+  per_frame_steps: 10
+  control_mode: 'multi_sine'
+  multi_sine_K: 3
+  multi_sine_B_bar: 1.0
+  steps: 1e5
+  logdir: 'sb3_logs/eel3d_ms'
+
+# 3D Eel Multi-Task (PPO — no speed targets, wave control)
+sb3_eel_multitask_nospeed:
+  env_type: 'eel_multitask'
+  nworld: 4
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'PPO'
+  lr: 3e-4
+  n_steps: 8192
+  steps: 1e6
+  logdir: 'sb3_logs/eel_multitask_ppo_nospeed'
+
+# 3D Eel Multi-Task (PPO — no speed targets + direction-distance tasks)
+sb3_eel_multitask_nospeed_dirdist:
+  env_type: 'eel_multitask'
+  nworld: 4
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_w_smooth: 0.15
+  direction_dist_w_offaxis: 0.0
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'PPO'
+  lr: 3e-4
+  n_steps: 8192
+  steps: 1e6
+  logdir: 'sb3_logs/eel_multitask_ppo_nospeed_dirdist'
+
+# 3D Eel Multi-Task — no-speed direction-distance goal (SAC)
+sb3_eel_multitask_nospeed_dirdist_sac:
+  env_type: 'eel_multitask'
+  nworld: 4
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_w_smooth: 0.15
+  direction_dist_w_offaxis: 0.0
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'SAC'
+  steps: 1e6
+  logdir: 'sb3_logs/eel_multitask_sac_nospeed_dirdist'
+  lr: 3e-4
+  sac_actor_lr: 3e-5
+  sac_critic_lr: 3e-4
+  gamma: 0.99
+  batch_size: 1024
+  buffer_size: 1000000
+  tau: 0.005
+  sac_gradient_steps: 4
+  sac_net_arch: [1024, 1024, 1024, 1024]
+  learning_starts: 20000
+
+# 3D Eel Multi-Task — no-speed direction-distance goal, low-power (PPO)
+sb3_eel_multitask_nospeed_dirdist_lowpower:
+  env_type: 'eel_multitask'
+  nworld: 1
+  lbm_nx: 120
+  lbm_ny: 200
+  lbm_nz: 50
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_w_smooth: 0.15
+  direction_dist_w_offaxis: 0.0
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'PPO'
+  lr: 3e-4
+  n_steps: 8192
+  steps: 1e6
+  logdir: 'sb3_logs/eel_multitask_ppo_nospeed_dirdist_lowpower'
+
+# 3D Eel Multi-Task — no-speed direction-distance goal, low-power (SAC)
+sb3_eel_multitask_nospeed_dirdist_sac_lowpower:
+  env_type: 'eel_multitask'
+  nworld: 1
+  lbm_nx: 120
+  lbm_ny: 200
+  lbm_nz: 50
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_w_smooth: 0.15
+  direction_dist_w_offaxis: 0.0
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'SAC'
+  steps: 1e6
+  logdir: 'sb3_logs/eel_multitask_sac_nospeed_dirdist_lowpower'
+  lr: 3e-4
+  sac_actor_lr: 3e-5
+  sac_critic_lr: 3e-4
+  gamma: 0.99
+  batch_size: 1024
+  buffer_size: 1000000
+  tau: 0.01
+  sac_gradient_steps: 32
+  sac_net_arch: [1024, 1024, 1024, 1024]
+  learning_starts: 8000
+
+# 3D Eel Multi-Task (SAC — off-policy)
+sb3_eel_multitask_sac:
+  env_type: 'eel_multitask'
+  nworld: 4
+  lbm_nx: 150
+  lbm_ny: 250
+  lbm_nz: 60
+  lbm_scale: 0.5
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'wave'
+  reward_w_task: 1.0
+  reward_w_roll: 0.20
+  reward_w_smooth: 0.03
+  reward_w_offaxis: 0.04
+  target_forward_vel: 0.12
+  target_yaw_rate: 0.08
+  target_vertical_vel: 0.05
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'SAC'
+  steps: 1e6
+  logdir: 'sb3_logs/eel_multitask_sac'
+  lr: 3e-4
+  sac_actor_lr: 3e-5
+  sac_critic_lr: 3e-4
+  gamma: 0.99
+  batch_size: 1024
+  buffer_size: 1000000
+  tau: 0.01
+  sac_gradient_steps: 32
+  sac_net_arch: [1024, 1024, 1024, 1024]
+  learning_starts: 8000
+
+# 3D Manta Multi-Task (PPO — on-policy baseline)
+sb3_manta_multitask:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'PPO'
+  lr: 3e-4
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_ppo'
+
+# 3D Manta Multi-Task (PPO — no speed targets)
+sb3_manta_multitask_nospeed:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  disable_speed_targets: true
+  use_direction_dist_tasks: false
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'PPO'
+  lr: 3e-4
+  n_steps: 8192
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_ppo_nospeed'
+
+# 3D Manta Multi-Task (PPO — no speed targets + direction-distance tasks)
+sb3_manta_multitask_nospeed_dirdist:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'PPO'
+  lr: 3e-4
+  n_steps: 8192
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_ppo_nospeed_dirdist'
+
+# 3D Manta Multi-Task (RecurrentPPO — no speed targets + direction-distance tasks)
+sb3_manta_multitask_rppo_nospeed_dirdist:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'RecurrentPPO'
+  lstm_hidden_size: 128
+  n_lstm_layers: 1
+  shared_lstm: false
+  enable_critic_lstm: true
+  lr: 3e-4
+  n_steps: 8192
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_rppo_nospeed_dirdist_v2'
+
+# 3D Manta Multi-Task (SAC — no speed targets + direction-distance tasks)
+sb3_manta_multitask_sac_nospeed_dirdist:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'SAC'
+  steps: 1e6
+  logdir: 'sb3_logs/manta_multitask_sac_nospeed_dirdist_v2'
+  lr: 3e-4
+  sac_actor_lr: 3e-5
+  sac_critic_lr: 3e-4
+  gamma: 0.99
+  batch_size: 1024
+  buffer_size: 1000000
+  tau: 0.01
+  sac_gradient_steps: 32
+  sac_net_arch: [1024, 1024, 1024, 1024]
+  learning_starts: 8000
+
+# 3D Manta Multi-Task (TD3 — no speed targets + direction-distance tasks)
+sb3_manta_multitask_td3_nospeed_dirdist:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'TD3'
+  lr: 3e-4
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_td3_nospeed_dirdist'
+
+# 3D Manta Multi-Task (DDPG — no speed targets + direction-distance tasks)
+sb3_manta_multitask_ddpg_nospeed_dirdist:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'DDPG'
+  lr: 3e-4
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_ddpg_nospeed_dirdist'
+
+# 3D Manta Multi-Task (TRPO — no speed targets + direction-distance tasks)
+sb3_manta_multitask_trpo_nospeed_dirdist:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  disable_speed_targets: true
+  use_direction_dist_tasks: true
+  direction_dist_min: 0.12
+  direction_dist_max: 0.25
+  direction_goal_threshold: 0.06
+  direction_dist_w_dist: 40.0
+  direction_dist_w_roll: 0.3
+  direction_dist_w_heading: 0.3
+  direction_dist_w_forward: 0.2
+  direction_dist_goal_bonus: 10.0
+  direction_dist_terminate_on_goal: true
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'TRPO'
+  lr: 3e-4
+  n_steps: 8192
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_trpo_nospeed_dirdist'
+
+# 3D Manta Forward-only (single task, PPO)
+sb3_manta_forward:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  disable_speed_targets: true          # linear reward, no saturation
+  alive_cost: 0.1                      # per-step cost — idling yields negative return
+  termination_penalty: 0.2             # soft boundary penalty (was 1.0)
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'PPO'
+  lr: 3e-4
+  n_steps: 8192                        # longer rollout — 8192/4 = 2048 per env = full episode
+  n_epochs: 10
+  ent_coef: 0.01
+  steps: 2e5
+  logdir: 'sb3_logs/manta_forward_ppo'
+
+# 3D Manta Multi-Task (RecurrentPPO — LSTM policy)
+sb3_manta_multitask_rppo:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'RecurrentPPO'
+  lstm_hidden_size: 128
+  n_lstm_layers: 1
+  shared_lstm: false
+  enable_critic_lstm: true
+  lr: 3e-4
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_rppo_v2'
+
+# 3D Manta Multi-Task (SAC — off-policy)
+sb3_manta_multitask_sac:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'SAC'
+  steps: 1e6
+  logdir: 'sb3_logs/manta_multitask_sac_v2'
+  lr: 3e-4
+  sac_actor_lr: 3e-5                      # actor lr
+  sac_critic_lr: 3e-4                     # critic lr
+  gamma: 0.99                             # discount factor
+  batch_size: 1024                        # batch size
+  buffer_size: 1000000                    # replay buffer 10^6
+  tau: 0.01                               # target smoothing coefficient
+  sac_gradient_steps: 32                  # update iterations per env step
+  sac_net_arch: [1024, 1024, 1024, 1024]  # 4 hidden layers x 1024
+  learning_starts: 8000
+
+# 3D Manta Multi-Task (TD3 — off-policy)
+sb3_manta_multitask_td3:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'TD3'
+  lr: 3e-4
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_td3'
+
+# 3D Manta Multi-Task (DDPG — off-policy)
+sb3_manta_multitask_ddpg:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'DDPG'
+  lr: 3e-4
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_ddpg'
+
+# 3D Manta Multi-Task (TRPO — on-policy)
+sb3_manta_multitask_trpo:
+  env_type: 'manta_multitask'
+  temporal_stack_obs: true
+  nworld: 4
+  lbm_nx: 200
+  lbm_ny: 200
+  lbm_nz: 80
+  lbm_scale: 1.0
+  fluid_density: 1000.0
+  time_limit: 2000
+  per_frame_steps: 10
+  task_switch_interval: 0
+  enabled_tasks: [forward, turn_left, turn_right, ascend, descend]
+  control_mode: 'direct'
+  reward_w_task: 1.0
+  reward_w_roll: 0.10
+  reward_w_smooth: 0.015
+  reward_w_offaxis: 0.02
+  target_forward_vel: 0.20
+  target_yaw_rate: 0.15
+  target_vertical_vel: 0.12
+  k_harmonics: 2
+  b_bar: 1.0
+  use_reduced_order: true
+  algo: 'TRPO'
+  lr: 3e-4
+  steps: 1e5
+  logdir: 'sb3_logs/manta_multitask_trpo'
+
+# ============================================================
+# SB3 2D LBM Environments
+# ============================================================
+
+# 2D Fish (PPO)
+sb3_fish:
+  env_type: 'fish'
+  nworld: 4
+  lbm_nx: 400
+  lbm_ny: 600
+  lbm_scale: 0.2
+  time_limit: 500
+  per_frame_steps: 30
+  lr: 3e-4
+  n_steps: 256
+  batch_size: 128
+  learning_starts: 2000
+  steps: 5e5
+  logdir: 'sb3_logs/fish_ppo'
+
+# 2D Butterfly (PPO)
+sb3_butterfly:
+  env_type: 'butterfly'
+  nworld: 4
+  lbm_nx: 400
+  lbm_ny: 600
+  lbm_scale: 0.2
+  time_limit: 500
+  per_frame_steps: 30
+  lr: 3e-4
+  n_steps: 256
+  batch_size: 128
+  learning_starts: 2000
+  steps: 1e5
+  logdir: 'sb3_logs/butterfly_ppo'
+
+# 2D Starfish (PPO)
+sb3_starfish:
+  env_type: 'starfish'
+  nworld: 4
+  lbm_nx: 400
+  lbm_ny: 600
+  lbm_scale: 0.2
+  time_limit: 500
+  per_frame_steps: 30
+  lr: 3e-4
+  n_steps: 256
+  batch_size: 128
+  learning_starts: 2000
+  steps: 1e5
+  logdir: 'sb3_logs/starfish_ppo'
+
+# 2D Starfish Multi-Goal (PPO)
+sb3_starfish_mg:
+  env_type: 'starfish_mg'
+  nworld: 4
+  lbm_nx: 400
+  lbm_ny: 600
+  lbm_scale: 0.2
+  time_limit: 2000
+  per_frame_steps: 30
+  lr: 3e-4
+  n_steps: 256
+  batch_size: 128
+  learning_starts: 2000
+  steps: 2e5
+  logdir: 'sb3_logs/starfish_mg_ppo'
+
+# 2D Fish with Obstacle (PPO)
+sb3_fish_obstacle:
+  env_type: 'fish_obstacle'
+  nworld: 4
+  lbm_nx: 400
+  lbm_ny: 600
+  lbm_scale: 0.2
+  time_limit: 500
+  per_frame_steps: 30
+  lr: 3e-4
+  n_steps: 256
+  batch_size: 128
+  learning_starts: 2000
+  steps: 1e5
+  logdir: 'sb3_logs/fish_obstacle_ppo'
+
+# v8
+# lbm:
+#   steps: 1e6
+#   action_repeat: 1
+#   envs: 8
+#   # time_limit: 500
+#   prefill: 4000
+#   # batch_size: 32
+#   # batch_length: 64
+#   train_ratio: 128
+#   eval_every: 4e4
+#   eval_episode_num: 8
+#   # log_every: 16e3
+#   video_pred_log: false
+#   encoder: {mlp_keys: '.*', cnn_keys: '$^'}
+#   decoder: {mlp_keys: '.*', cnn_keys: '$^'}

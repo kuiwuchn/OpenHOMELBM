@@ -1,0 +1,17 @@
+*/__pycache__
+__pycache__
+envs/lbm/__pycache__/__init__.cpython-311.pyc
+envs/lbm/__pycache__/lbm_core.cpython-311.pyc
+envs/lbm/__pycache__/lbm_fluid_env_func.cpython-311.pyc
+envs/lbm/__pycache__/lbm_fluid_env.cpython-311.pyc
+envs/lbm/__pycache__/lbm_func.cpython-311.pyc
+envs/lbm/__pycache__/lbm_solver.cpython-311.pyc
+envs/lbm/__pycache__/mujoco_to_lbm.cpython-311.pyc
+envs/lbm/__pycache__/solid_func.cpython-311.pyc
+envs/lbm/butterfly/__pycache__/__init__.cpython-311.pyc
+envs/lbm/butterfly/__pycache__/butterfly_lbm_env.cpython-311.pyc
+envs/lbm/fish/__pycache__/__init__.cpython-311.pyc
+envs/lbm/fish/__pycache__/fish_lbm_env.cpython-311.pyc
+envs/lbm/fish/__pycache__/fish_obstacle_lbm_env.cpython-311.pyc
+envs/lbm/starfish/__pycache__/__init__.cpython-311.pyc
+envs/lbm/starfish/__pycache__/starfish_lbm_env.cpython-311.pyc

@@ -1,10 +1,11 @@
 """Lightweight runtime helpers for 3D LBM demos.
 
-No Dreamer agent/checkpoint code is imported here. This module only provides:
-- YAML config merging
+This module only provides:
+- optional named config merging for legacy tools
 - multi-task LBM environment construction
 - MuJoCo/LBM visualization helpers
 """
+
 
 from __future__ import annotations
 
@@ -109,9 +110,13 @@ def make_multitask_env(config, nworld=1):
     b_bar = getattr(config, "b_bar", 1.0)
     use_reduced_order = getattr(config, "use_reduced_order", True)
     control_mode = getattr(config, "control_mode", "direct")
+    mjcf_path = getattr(config, "mjcf_path", None)
+    root_link = getattr(config, "root_link", None)
+    root_position = getattr(config, "root_position", None)
 
 
     if env_type == "clownfish_multitask":
+
         from envs.lbm3d.clownfish.clownfish_multitask_env_3d import ClownfishMultiTaskEnv
         env_class = ClownfishMultiTaskEnv
     elif env_type == "tuna_multitask":
@@ -127,23 +132,30 @@ def make_multitask_env(config, nworld=1):
         from envs.lbm3d.manta.manta_multitask_env_3d import MantaMultiTaskEnv
         env_class = MantaMultiTaskEnv
 
-    env = env_class(
+    env_kwargs = {
+        "nworld": nworld,
+        "nx": nx,
+        "ny": ny,
+        "nz": nz,
+        "lbm_scale": lbm_scale,
+        "fluid_density": fluid_density,
+        "max_episode_steps": config.time_limit,
+        "per_frame_steps": per_frame_steps,
+        "task_switch_interval": task_switch_interval,
+        "k_harmonics": k_harmonics,
+        "b_bar": b_bar,
+        "use_reduced_order": use_reduced_order,
+        "control_mode": control_mode,
+    }
+    if mjcf_path is not None:
+        env_kwargs["mjcf_path"] = str(mjcf_path)
+    if root_link is not None:
+        env_kwargs["root_link"] = root_link
+    if root_position is not None:
+        env_kwargs["root_position"] = tuple(root_position)
 
-        nworld=nworld,
-        nx=nx,
-        ny=ny,
-        nz=nz,
-        lbm_scale=lbm_scale,
-        fluid_density=fluid_density,
-        max_episode_steps=config.time_limit,
-        per_frame_steps=per_frame_steps,
-        task_switch_interval=task_switch_interval,
-        k_harmonics=k_harmonics,
-        b_bar=b_bar,
-        use_reduced_order=use_reduced_order,
-        control_mode=control_mode,
+    env = env_class(**env_kwargs)
 
-    )
     return RuntimeVecEnvWrapper(env)
 
 

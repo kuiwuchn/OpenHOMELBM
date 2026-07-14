@@ -9,5 +9,6 @@ scipy
 mujoco-warp
 warp
 tqdm
-
-
+pyvista 
+imageio 
+imageio-ffmpeg

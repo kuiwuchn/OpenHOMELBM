@@ -1,0 +1,113 @@
+{
+  "name": "eel3d_realtime",
+  "animal": "eel",
+  "model": {
+    "env_type": "eel_multitask",
+    "mjcf_path": "envs/lbm3d/eel/eel_3d.xml",
+    "root_link": "seg1",
+    "time_limit": 2000
+  },
+  "lbm": {
+    "nx": 150,
+    "ny": 250,
+    "nz": 60,
+    "lbm_scale": 0.5,
+    "fluid_density": 1000.0,
+    "per_frame_steps": 10
+  },
+  "control": {
+    "control_mode": "wave",
+    "task_switch_interval": 0,
+    "start_mode": "freeze",
+    "warmup_steps": 20,
+    "transition_steps": 30,
+    "task_by_preset": {
+      "forward": "forward",
+      "fast": "forward",
+      "reverse": "forward",
+      "head_tail_swing": "forward",
+      "freeze": "forward",
+      "turn_l": "turn_left",
+      "turn_r": "turn_right",
+      "ascend": "ascend",
+      "descend": "descend"
+    }
+  },
+  "controls": {
+    "w": "forward",
+    "a": "turn_l",
+    "d": "turn_r",
+    "f": "fast",
+    "s": "freeze",
+    "z": "ascend",
+    "c": "descend"
+  },
+  "presets": {
+    "action_keys": ["A", "omega", "k_wave", "head_bias", "roll"],
+    "actions": {
+      "forward": {
+        "A": 0.8,
+        "omega": -0.5,
+        "k_wave": 0.5,
+        "head_bias": 0.0,
+        "roll": 0.0
+      },
+      "turn_l": {
+        "A": 0.7,
+        "omega": -0.5,
+        "k_wave": 0.5,
+        "head_bias": 0.6,
+        "roll": 0.0
+      },
+      "turn_r": {
+        "A": 0.7,
+        "omega": -0.5,
+        "k_wave": 0.5,
+        "head_bias": -0.6,
+        "roll": 0.0
+      },
+      "reverse": {
+        "A": 0.8,
+        "omega": 0.5,
+        "k_wave": 0.5,
+        "head_bias": 0.0,
+        "roll": 0.0
+      },
+      "fast": {
+        "A": 1.0,
+        "omega": -1.0,
+        "k_wave": 0.8,
+        "head_bias": 0.0,
+        "roll": 0.0
+      },
+      "freeze": {
+        "A": 0.0,
+        "omega": 0.0,
+        "k_wave": 0.5,
+        "head_bias": 0.0,
+        "roll": 0.0
+      },
+      "ascend": {
+        "A": 0.8,
+        "omega": -0.5,
+        "k_wave": 0.5,
+        "head_bias": 0.0,
+        "roll": 0.8
+      },
+      "descend": {
+        "A": 0.8,
+        "omega": -0.5,
+        "k_wave": 0.5,
+        "head_bias": 0.0,
+        "roll": -0.8
+      },
+      "head_tail_swing": {
+        "A": 0.8,
+        "omega": -0.5,
+        "k_wave": 0.0,
+        "head_bias": 0.0,
+        "roll": 0.0
+      }
+    }
+  }
+}

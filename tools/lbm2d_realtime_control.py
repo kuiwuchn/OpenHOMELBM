@@ -39,12 +39,211 @@ from lbm_wave_tester_2d import get_raw_frame_2d, raw_to_rgb
 
 
 
+@wp.kernel
+def set_uniform_flow_kernel(flows: wp.array(dtype=HomeFlow), ux: float, uy: float):
+    world_idx, x, y = wp.tid()
+    flow = flows[world_idx]
+    rho = 1.0
+    pop = wp.types.vector(length=9, dtype=wp.float32)
+    u_sqr = ux * ux + uy * uy
+    for i in range(9):
+        cu = flow.cx_d2q9[i] * ux + flow.cy_d2q9[i] * uy
+        pop[i] = rho * flow.w_d2q9[i] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sqr)
+
+    inv_rho = 1.0 / rho
+    pixx = pop[1] + pop[2] + pop[5] + pop[6] + pop[7] + pop[8]
+    piyy = pop[3] + pop[4] + pop[5] + pop[6] + pop[7] + pop[8]
+    pixy = pop[5] + pop[7] - pop[6] - pop[8]
+    cs2_local = pixx
+    pixx = pixx * inv_rho - cs2_local
+    piyy = piyy * inv_rho - cs2_local
+    pixy = pixy * inv_rho
+
+    flow.rho[x, y] = rho
+    flow.rho_post[x, y] = rho
+    flow.u[x, y] = wp.vec2(ux, uy)
+    flow.u_post[x, y] = wp.vec2(ux, uy)
+    flow.Sxx[x, y] = pixx
+    flow.Sxx_post[x, y] = pixx
+    flow.Syy[x, y] = piyy
+    flow.Syy_post[x, y] = piyy
+    flow.Sxy[x, y] = pixy
+    flow.Sxy_post[x, y] = pixy
+    flow.forcex[x, y] = 0.0
+    flow.forcey[x, y] = 0.0
+
+
+@wp.kernel
+def set_boundary_velocity_kernel(flows: wp.array(dtype=HomeFlow), boundary_idx: int, ux: float, uy: float):
+    world_idx = wp.tid()
+    flow = flows[world_idx]
+    flow.bc_value[boundary_idx] = wp.vec2(ux, uy)
+
+
+@wp.kernel
+def advance_prescribed_solid_motion_kernel(flows: wp.array(dtype=HomeFlow), solid_id: int, vx: float, vy: float, omega: float):
+    world_idx = wp.tid()
+    flow = flows[world_idx]
+    flow.solid_position[solid_id] = flow.solid_position[solid_id] + wp.vec2(vx, vy)
+    flow.solid_angle[solid_id] = flow.solid_angle[solid_id] + omega
+
+
+@wp.kernel
+def set_local_force_kernel(
+    flows: wp.array(dtype=HomeFlow),
+    cx: float,
+    cy: float,
+    rx: float,
+    ry: float,
+    fx: float,
+    fy: float,
+):
+    world_idx, x, y = wp.tid()
+    flow = flows[world_idx]
+    dx = (float(x) - cx) / wp.max(rx, 1.0e-6)
+    dy = (float(y) - cy) / wp.max(ry, 1.0e-6)
+    r2 = dx * dx + dy * dy
+    weight = wp.max(0.0, 1.0 - r2)
+    flow.forcex[x, y] = fx * weight
+    flow.forcey[x, y] = fy * weight
+
+
+BOUNDARY_NAME_TO_INDEX = {
+
+
+    "left": 0,
+    "top": 1,
+    "right": 2,
+    "bottom": 3,
+}
+
+
+def perturbation_signal(cfg: Dict[str, Any], step: int, default_period: float) -> float:
+    active_steps = cfg.get("active_steps")
+    if active_steps is not None and step > int(active_steps):
+        return 0.0
+    period_steps = max(1.0, float(cfg.get("period_steps", default_period)))
+    phase = float(cfg.get("phase", 0.0))
+    return float(np.sin(2.0 * np.pi * float(step) / period_steps + phase))
+
+
+def apply_lbm_runtime_flow_config(env: Any, flow_cfg: Optional[Dict[str, Any]], step: int) -> None:
+    if not flow_cfg:
+        return
+
+    perturb = flow_cfg.get("inlet_perturbation") or flow_cfg.get("boundary_perturbation")
+    if perturb:
+        boundary = perturb.get("boundary", "left")
+        boundary_idx = BOUNDARY_NAME_TO_INDEX.get(str(boundary).lower(), int(boundary) if isinstance(boundary, int) else 0)
+        base = perturb.get("base", flow_cfg.get("bc_value", [[0.0, 0.0]] * 4)[boundary_idx])
+        amp = perturb.get("amplitude", [0.0, 0.0])
+        signal = perturbation_signal(perturb, step, 900.0)
+        ux = float(base[0]) + float(amp[0]) * signal
+        uy = float(base[1]) + float(amp[1]) * signal
+        wp.launch(
+            set_boundary_velocity_kernel,
+            dim=env.nworld,
+            inputs=[env.solver.flows_wp, int(boundary_idx), ux, uy],
+            device=env.solver.device,
+        )
+
+    wake = flow_cfg.get("wake_perturbation")
+    if wake and bool(wake.get("enabled", True)):
+        center = wake.get("center", [0.5 * env.nx, 0.5 * env.ny])
+        radius = wake.get("radius", [20.0, 20.0])
+        force = wake.get("force", [0.0, 0.0])
+        signal = perturbation_signal(wake, step, 240.0)
+        wp.launch(
+            set_local_force_kernel,
+            dim=(env.nworld, env.nx, env.ny),
+            inputs=[
+                env.solver.flows_wp,
+                float(center[0]),
+                float(center[1]),
+                float(radius[0]),
+                float(radius[1]),
+                float(force[0]) * signal,
+                float(force[1]) * signal,
+            ],
+            device=env.solver.device,
+        )
+
+
+
+def apply_lbm_flow_config(env: Any, flow_cfg: Optional[Dict[str, Any]]) -> None:
+
+    if not flow_cfg:
+        return
+
+    for flow in env.solver.flows:
+        if "viscosity" in flow_cfg:
+            flow.vis_shear = float(flow_cfg["viscosity"])
+        if "bc_type" in flow_cfg:
+            bc_type = [int(v) for v in flow_cfg["bc_type"]]
+            if len(bc_type) != 4:
+                raise ValueError("lbm.flow.bc_type must contain 4 values: left, top, right, bottom")
+            flow.bc_type = wp.types.vector(length=4, dtype=wp.int32)(*bc_type)
+        if "bc_value" in flow_cfg:
+            values = flow_cfg["bc_value"]
+            if len(values) != 4:
+                raise ValueError("lbm.flow.bc_value must contain 4 vectors: left, top, right, bottom")
+            flow.bc_value = wp.array(tuple(wp.vec2(float(v[0]), float(v[1])) for v in values), dtype=wp.vec2, device=env.solver.device)
+
+
+    env.solver.flows_wp = wp.array(env.solver.flows, dtype=HomeFlow, device=env.solver.device)
+
+    if "initial_velocity" in flow_cfg:
+        ux, uy = flow_cfg["initial_velocity"]
+        wp.launch(
+            set_uniform_flow_kernel,
+            dim=(env.nworld, env.nx, env.ny),
+            inputs=[env.solver.flows_wp, float(ux), float(uy)],
+            device=env.solver.device,
+        )
+        wp.synchronize()
+
+
 class GenericLBM2DEnv(LBMFluidEnv):
     """Generic 2D LBM wrapper for arbitrary MuJoCo XML + solid_config.
 
     This is for realtime demos only: it runs the same MuJoCo-Warp <-> 2D LBM
     coupling as the training envs, but uses zero reward and never terminates.
     """
+
+    def __init__(
+        self,
+        *args,
+        flow_config: Optional[Dict[str, Any]] = None,
+        prescribed_motion: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ):
+        self.flow_config = flow_config or {}
+        self.prescribed_motion = prescribed_motion or {}
+        super().__init__(*args, **kwargs)
+
+    def reset(self, *args, **kwargs):
+        obs = super().reset(*args, **kwargs)
+        apply_lbm_flow_config(self, self.flow_config)
+        return obs
+
+    def _simulation_step(self):
+        if not self.prescribed_motion.get("enabled", False):
+            return super()._simulation_step()
+
+        solid_id = int(self.prescribed_motion.get("solid_id", 0))
+        velocity = self.prescribed_motion.get("velocity", [0.0, 0.0])
+        vx = float(velocity[0])
+        vy = float(velocity[1])
+        omega = float(self.prescribed_motion.get("angular_velocity", 0.0))
+        for _ in range(self.per_frame_steps):
+            wp.launch(
+                advance_prescribed_solid_motion_kernel,
+                dim=self.nworld,
+                inputs=[self.solver.flows_wp, solid_id, vx, vy, omega],
+                device=self.solver.device,
+            )
+            self.solver.step()
+            wp.synchronize()
 
     def _compute_reward(self, instability_mask=None):
         return np.zeros(self.nworld, dtype=np.float32)
@@ -54,7 +253,9 @@ class GenericLBM2DEnv(LBMFluidEnv):
 
 
 
+
 ENV_CLASSES = {
+
     "GenericLBM2DEnv": GenericLBM2DEnv,
     "FishLBMEnv": FishLBMEnv,
     "FishObstacleLBMEnv": FishObstacleLBMEnv,
@@ -380,10 +581,13 @@ def sync_warp_to_cpu_mjdata(env: Any, mj_data: mujoco.MjData, world_idx: int = 0
 
 def normalize_action_for_panel(action: np.ndarray, ctrl_range: Optional[np.ndarray]) -> np.ndarray:
     values = np.asarray(action, dtype=np.float32).reshape(-1)
+    if values.size == 0:
+        return values
     if ctrl_range is None or ctrl_range.shape[0] < values.size:
         return np.clip(values, -1.0, 1.0)
 
     ranges = np.asarray(ctrl_range[: values.size], dtype=np.float32)
+
     lo = ranges[:, 0]
     hi = ranges[:, 1]
     span = np.maximum(hi - lo, 1.0e-6)
@@ -393,8 +597,33 @@ def normalize_action_for_panel(action: np.ndarray, ctrl_range: Optional[np.ndarr
     return np.clip(normalized, -1.0, 1.0)
 
 
+def reynolds_viscosity(re_value: float, velocity: float, diameter: float) -> float:
+    return float(velocity) * float(diameter) / max(float(re_value), 1.0e-6)
+
+
+def set_env_viscosity(env: Any, viscosity: float) -> None:
+    for flow in env.solver.flows:
+        flow.vis_shear = float(viscosity)
+    env.solver.flows_wp = wp.array(env.solver.flows, dtype=HomeFlow, device=env.solver.device)
+    env.solver.captured = False
+    env.solver.captured_graph = None
+
+
+def move_lbm_solid(env: Any, solid_id: int, dx: float, dy: float) -> None:
+    wp.launch(
+        advance_prescribed_solid_motion_kernel,
+        dim=env.nworld,
+        inputs=[env.solver.flows_wp, int(solid_id), float(dx), float(dy), 0.0],
+        device=env.solver.device,
+    )
+    wp.synchronize()
+
+
 
 def draw_control_signal_panel(
+
+
+
     width: int,
     height: int,
     mode: str,
@@ -407,7 +636,9 @@ def draw_control_signal_panel(
     controls_line: str,
     action_gain: float,
     gain_step: float,
+    reynolds_info: Optional[Dict[str, float]] = None,
 ) -> np.ndarray:
+
     panel = np.full((height, width, 3), (18, 20, 24), dtype=np.uint8)
     cv2.rectangle(panel, (0, 0), (width - 1, height - 1), (52, 58, 68), 1)
 
@@ -417,17 +648,33 @@ def draw_control_signal_panel(
     title = f"Control  mode={mode} {'[PAUSED]' if paused else ''}"
     cv2.putText(panel, title, (12, 30), font, title_scale, (235, 238, 245), 2, cv2.LINE_AA)
     cv2.putText(panel, f"step={step}  gain={action_gain:.2f}  fps={fps:.1f}", (12, 56), font, info_scale, (180, 190, 205), 1, cv2.LINE_AA)
-    cv2.putText(panel, f"+/- gain step={gain_step:.2f}", (12, 78), font, info_scale, (150, 165, 185), 1, cv2.LINE_AA)
+    adjust_text = "+/- Reynolds" if reynolds_info else f"+/- gain step={gain_step:.2f}"
+    cv2.putText(panel, adjust_text, (12, 78), font, info_scale, (150, 165, 185), 1, cv2.LINE_AA)
 
+
+    reynolds_bottom = 94
+    if reynolds_info:
+        re_value = float(reynolds_info.get("re", 0.0))
+        viscosity = float(reynolds_info.get("viscosity", 0.0))
+        re_step = float(reynolds_info.get("step", 0.0))
+        velocity = float(reynolds_info.get("velocity", 0.0))
+        diameter = float(reynolds_info.get("diameter", 0.0))
+        cv2.putText(panel, "Reynolds control", (12, 106), font, title_scale * 0.82, (235, 238, 245), 1, cv2.LINE_AA)
+        cv2.putText(panel, f"Re={re_value:.1f}  nu={viscosity:.5f}", (12, 132), font, info_scale, (190, 205, 230), 1, cv2.LINE_AA)
+        cv2.putText(panel, f"U={velocity:.3f}  D={diameter:.1f}", (12, 154), font, info_scale, (170, 185, 205), 1, cv2.LINE_AA)
+        cv2.putText(panel, f"+/- adjust Re by {re_step:.1f}", (12, 176), font, info_scale, (150, 165, 185), 1, cv2.LINE_AA)
+        reynolds_bottom = 190
 
     norm_values = normalize_action_for_panel(action, ctrl_range)
+
     raw_values = np.asarray(action, dtype=np.float32).reshape(-1)
     n = int(norm_values.size)
     if n == 0:
-        cv2.putText(panel, "No action", (18, 100), font, 0.6, (220, 220, 220), 1, cv2.LINE_AA)
+        cv2.putText(panel, "No action", (18, reynolds_bottom + 18), font, 0.6, (220, 220, 220), 1, cv2.LINE_AA)
         return panel
 
-    top = 104
+    top = max(104, reynolds_bottom + 20)
+
     bottom_reserved = 74
     available_h = max(80, height - top - bottom_reserved)
     row_h = max(26, min(52, available_h // max(1, n)))
@@ -460,6 +707,22 @@ def draw_control_signal_panel(
     return panel
 
 
+def draw_lbm_target_marker(frame: np.ndarray, target: Optional[np.ndarray]) -> np.ndarray:
+    if target is None:
+        return frame
+    out = frame.copy()
+    h, w = out.shape[:2]
+    x = int(round(float(target[0])))
+    y = int(round(h - 1 - float(target[1])))
+    if x < 0 or x >= w or y < 0 or y >= h:
+        return out
+    color = (235, 255, 20)
+    cv2.circle(out, (x, y), 4, color, -1, cv2.LINE_AA)
+    cv2.circle(out, (x, y), 6, color, 1, cv2.LINE_AA)
+    return out
+
+
+
 def make_combined_frame(lbm_frame: np.ndarray, right_panel: np.ndarray, output_height: int) -> np.ndarray:
     lbm_resized = resize_to_height(lbm_frame, output_height)
     panel_resized = resize_to_height(right_panel, output_height)
@@ -469,6 +732,7 @@ def make_combined_frame(lbm_frame: np.ndarray, right_panel: np.ndarray, output_h
 
 
 class OpenGLInteropDisplay:
+
     """GLFW display with CUDA/OpenGL interop for the LBM panel.
 
     Left panel: Warp/CUDA writes LBM RGBA directly into an OpenGL PBO.
@@ -730,6 +994,11 @@ def instantiate_env(config: Dict[str, Any], config_dir: pathlib.Path, cli_args: 
         per_frame_steps=cli_args.per_frame_steps if cli_args.per_frame_steps is not None else int(lbm_cfg.get("per_frame_steps", 10)),
         render_mode=None,
     )
+    if env_class_name == "GenericLBM2DEnv":
+        kwargs["flow_config"] = lbm_cfg.get("flow")
+        kwargs["prescribed_motion"] = env_cfg.get("prescribed_motion")
+
+
     # Let env defaults choose XML/solid config if omitted.
     if kwargs["xml_path"] is None:
         kwargs.pop("xml_path")
@@ -777,7 +1046,23 @@ def main() -> None:
     camera_cfg = config.get("camera", {})
     control_cfg = config.get("control", {})
     controls_cfg = config.get("controls", {})
+    run_cfg = config.get("run", {})
+    lbm_cfg = config.get("lbm", {})
+    flow_cfg = lbm_cfg.get("flow", {})
+    reynolds_cfg = flow_cfg.get("reynolds_control", {})
+    reynolds_enabled = bool(reynolds_cfg.get("enabled", False))
+    reynolds_velocity = float(reynolds_cfg.get("velocity", flow_cfg.get("initial_velocity", [0.0, 0.0])[0]))
+    reynolds_diameter = float(reynolds_cfg.get("diameter", 2.0 * float(lbm_cfg.get("lbm_scale", 0.0)) * float(lbm_cfg.get("nx", 0.0))))
+    current_reynolds = float(reynolds_cfg.get("value", reynolds_velocity * reynolds_diameter / max(float(flow_cfg.get("viscosity", 1.0)), 1.0e-6)))
+    reynolds_step = float(reynolds_cfg.get("step", 10.0))
+    reynolds_min = float(reynolds_cfg.get("min", 1.0))
+    reynolds_max = float(reynolds_cfg.get("max", 1000.0))
+    if reynolds_enabled:
+        flow_cfg["viscosity"] = reynolds_viscosity(current_reynolds, reynolds_velocity, reynolds_diameter)
+
     presets = config.get("presets", {})
+
+
     if not presets:
         raise ValueError("Config must contain a non-empty 'presets' object")
     if not controls_cfg:
@@ -785,7 +1070,9 @@ def main() -> None:
 
     env = instantiate_env(config, config_dir, args)
     env.reset()
+    current_viscosity = float(flow_cfg.get("viscosity", 0.0))
     action_dim = env.action_space.shape[1]
+
 
     if args.dry_run:
         print(f"Loaded config: {config_path}")
@@ -818,11 +1105,31 @@ def main() -> None:
 
     keymap = build_keymap(controls_cfg)
     controls_line = controls_help(controls_cfg)
+    manual_solid_cfg = config.get("env", {}).get("manual_solid_control", {})
+    manual_solid_enabled = bool(manual_solid_cfg.get("enabled", False))
+    manual_solid_id = int(manual_solid_cfg.get("solid_id", 0))
+    manual_solid_step = float(manual_solid_cfg.get("step", 2.0))
+    manual_solid_smooth_speed = float(manual_solid_cfg.get("smooth_speed", 0.08))
+    if manual_solid_enabled:
+        controls_line = f"WASD target({manual_solid_step:g}) smooth({manual_solid_smooth_speed:g}) | {controls_line}"
+
     ctrl_range = env.mujoco_model.actuator_ctrlrange.copy()
 
+
     gl_display = None
+    headless = bool(run_cfg.get("headless", False))
+    max_steps = run_cfg.get("steps")
+    max_steps = int(max_steps) if max_steps is not None else None
+    record_start_step = int(run_cfg.get("record_start_step", 0))
+    record_every = max(1, int(run_cfg.get("record_every", 1)))
+
+
+
+    if headless and render_backend == "opengl":
+        raise ValueError("run.headless=true requires render.backend='opencv'")
 
     if render_backend == "opengl":
+
         if args.record is not None:
             print("[warn] --record is disabled for --render-backend opengl (would require glReadPixels).")
             args.record = None
@@ -839,14 +1146,19 @@ def main() -> None:
 
 
     else:
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        if not headless:
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     writer = None
 
-    record_path = pathlib.Path(args.record) if args.record else None
+    record_value = args.record or run_cfg.get("record")
+    record_path = pathlib.Path(record_value) if record_value else None
+    if record_path is not None and not record_path.is_absolute():
+        record_path = PROJECT_ROOT / record_path
     record_fps = args.record_fps if args.record_fps is not None else int(render_cfg.get("record_fps", 30))
     if record_path:
         record_path.parent.mkdir(parents=True, exist_ok=True)
+
 
     mode = start_mode
     step = 0
@@ -854,7 +1166,11 @@ def main() -> None:
     paused = False
     lbm_vmax: Optional[float] = None
     initial_head_pos = env.solver.flows[0].solid_position.numpy()[0].copy()
+    manual_solid_target = None
+    if manual_solid_enabled:
+        manual_solid_target = env.solver.flows[0].solid_position.numpy()[manual_solid_id].copy()
     last_time = time.time()
+
     fps = 0.0
     last_reward = 0.0
     last_action = np.zeros((1, action_dim), dtype=np.float32)
@@ -863,7 +1179,9 @@ def main() -> None:
 
     print(f"Loaded config: {config_path}")
 
-    print(f"Controls: {controls_line} | +/- gain | Space pause | R reset | Q/Esc quit")
+    adjust_help = "+/- Reynolds" if reynolds_enabled else "+/- gain"
+    print(f"Controls: {controls_line} | {adjust_help} | Space pause | R reset | Q/Esc quit")
+
 
 
     try:
@@ -888,9 +1206,20 @@ def main() -> None:
                     action = target_action
                 action = np.clip((action * action_gain).astype(np.float32), -1.0, 1.0)
 
+                if manual_solid_enabled and manual_solid_target is not None:
+                    current_pos = env.solver.flows[0].solid_position.numpy()[manual_solid_id]
+                    delta = manual_solid_target - current_pos
+                    dist = float(np.linalg.norm(delta))
+                    if dist > 1.0e-6:
+                        move = delta * min(1.0, manual_solid_smooth_speed / dist)
+                        move_lbm_solid(env, manual_solid_id, float(move[0]), float(move[1]))
+
+                apply_lbm_runtime_flow_config(env, flow_cfg, step)
                 if args.debug_render:
+
                     print(f"[loop {time.perf_counter():.6f}] env.step begin step={step}", flush=True)
                 _obs, reward, _done, _info = env.step(action)
+
                 if args.debug_render:
                     print(f"[loop {time.perf_counter():.6f}] env.step end step={step}", flush=True)
                 last_reward = float(reward[0])
@@ -906,6 +1235,15 @@ def main() -> None:
             dx = float(head_pos[0] - initial_head_pos[0])
             dy = float(head_pos[1] - initial_head_pos[1])
 
+            reynolds_info = None
+            if reynolds_enabled:
+                reynolds_info = {
+                    "re": current_reynolds,
+                    "viscosity": current_viscosity,
+                    "velocity": reynolds_velocity,
+                    "diameter": reynolds_diameter,
+                    "step": reynolds_step,
+                }
             control_panel = draw_control_signal_panel(
                 control_panel_width,
                 output_height,
@@ -919,7 +1257,9 @@ def main() -> None:
                 controls_line,
                 action_gain,
                 gain_step,
+                reynolds_info,
             )
+
 
 
             if render_backend == "opengl":
@@ -948,34 +1288,77 @@ def main() -> None:
                             key = candidate
                             break
             else:
-                raw = get_raw_frame_2d(env, render_type, world_idx=0)
-                lbm_vmax = compute_lbm_vmax(raw, render_type, lbm_vmax, vmax_scale)
-                lbm_frame = raw_to_rgb(raw, lbm_vmax, render_type)
-                combined = make_combined_frame(lbm_frame, control_panel, output_height)
+                should_record = record_path is not None and step >= record_start_step and (step - record_start_step) % record_every == 0
+                should_render = (not headless) or should_record
+                if should_render:
+                    raw = get_raw_frame_2d(env, render_type, world_idx=0)
+                    lbm_vmax = compute_lbm_vmax(raw, render_type, lbm_vmax, vmax_scale)
+                    lbm_frame = raw_to_rgb(raw, lbm_vmax, render_type)
+                    if manual_solid_enabled:
+                        lbm_frame = draw_lbm_target_marker(lbm_frame, manual_solid_target)
+                    combined = make_combined_frame(lbm_frame, control_panel, output_height)
 
 
-                if writer is None and record_path is not None:
-                    h, w = combined.shape[:2]
-                    writer = cv2.VideoWriter(str(record_path), cv2.VideoWriter_fourcc(*"mp4v"), record_fps, (w, h))
-                if writer is not None:
-                    writer.write(cv2.cvtColor(combined, cv2.COLOR_RGB2BGR))
+                    if should_record:
+                        if writer is None:
+                            h, w = combined.shape[:2]
+                            writer = cv2.VideoWriter(str(record_path), cv2.VideoWriter_fourcc(*"mp4v"), record_fps, (w, h))
+                        if writer is not None:
+                            writer.write(cv2.cvtColor(combined, cv2.COLOR_RGB2BGR))
 
-                cv2.imshow(window_name, cv2.cvtColor(combined, cv2.COLOR_RGB2BGR))
-                key = cv2.waitKey(1) & 0xFF
-                if key in (27, ord("q"), ord("Q")):
-                    break
+                    if headless:
+                        key = 255
+                    else:
+                        cv2.imshow(window_name, cv2.cvtColor(combined, cv2.COLOR_RGB2BGR))
+                        key = cv2.waitKey(1) & 0xFF
+                        if key in (27, ord("q"), ord("Q")):
+                            break
+                else:
+                    key = 255
+
+
+            if max_steps is not None and step >= max_steps:
+                break
 
             if key in (ord("+"), ord("=")):
-                action_gain = min(5.0, action_gain + gain_step)
+
+                if reynolds_enabled:
+                    current_reynolds = min(reynolds_max, current_reynolds + reynolds_step)
+                    current_viscosity = reynolds_viscosity(current_reynolds, reynolds_velocity, reynolds_diameter)
+                    set_env_viscosity(env, current_viscosity)
+                    flow_cfg["viscosity"] = current_viscosity
+                else:
+                    action_gain = min(5.0, action_gain + gain_step)
             elif key in (ord("-"), ord("_")):
-                action_gain = max(0.0, action_gain - gain_step)
+                if reynolds_enabled:
+                    current_reynolds = max(reynolds_min, current_reynolds - reynolds_step)
+                    current_viscosity = reynolds_viscosity(current_reynolds, reynolds_velocity, reynolds_diameter)
+                    set_env_viscosity(env, current_viscosity)
+                    flow_cfg["viscosity"] = current_viscosity
+                else:
+                    action_gain = max(0.0, action_gain - gain_step)
+
+            elif manual_solid_enabled and manual_solid_target is not None and key in (ord("w"), ord("W"), ord("a"), ord("A"), ord("s"), ord("S"), ord("d"), ord("D")):
+                if key in (ord("w"), ord("W")):
+                    manual_solid_target[1] += manual_solid_step
+                elif key in (ord("s"), ord("S")):
+                    manual_solid_target[1] -= manual_solid_step
+                elif key in (ord("a"), ord("A")):
+                    manual_solid_target[0] -= manual_solid_step
+                elif key in (ord("d"), ord("D")):
+                    manual_solid_target[0] += manual_solid_step
             elif key == ord(" "):
+
                 paused = not paused
             elif key in (ord("r"), ord("R")):
 
+
                 env.reset()
                 initial_head_pos = env.solver.flows[0].solid_position.numpy()[0].copy()
+                if manual_solid_enabled:
+                    manual_solid_target = env.solver.flows[0].solid_position.numpy()[manual_solid_id].copy()
                 step = 0
+
                 mode_step = 0
                 lbm_vmax = None
                 last_reward = 0.0

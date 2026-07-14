@@ -1,0 +1,123 @@
+{
+  "name": "karman_vortex_2d_project_solver",
+  "env": {
+    "class": "GenericLBM2DEnv",
+    "xml_path": "envs/lbm/karman/karman_cylinder_2d.xml",
+    "solid_config": [
+      {
+        "solid_id": 0,
+        "body_id": 1,
+        "body_or_geom_name": "cylinder_geom",
+        "lbm_position": [150, 101],
+
+        "is_body": false,
+        "n_samples": 96
+      }
+    ],
+    "prescribed_motion": {
+      "enabled": true,
+      "solid_id": 0,
+      "velocity": [0.0, 0.0],
+      "angular_velocity": 0.0
+    },
+    "manual_solid_control": {
+      "enabled": true,
+      "solid_id": 0,
+      "step": 2.0,
+      "smooth_speed": 0.3
+
+    }
+
+
+  },
+  "lbm": {
+    "nx": 600,
+    "ny": 200,
+    "lbm_scale": 0.016,
+    "per_frame_steps": 5,
+    "flow": {
+      "initial_velocity": [0.1, 0.0],
+      "viscosity": 0.01,
+      "reynolds_control": {
+        "enabled": true,
+        "value": 192.0,
+        "min": 50.0,
+        "max": 400.0,
+        "step": 50.0,
+
+        "velocity": 0.1,
+        "diameter": 19.2
+      },
+
+
+
+      "bc_type": [0, 1, 1, 1],
+      "bc_value": [
+        [0.1, 0.0],
+        [0.0, 0.0],
+        [0.0, 0.0],
+        [0.0, 0.0]
+      ],
+      "inlet_perturbation": {
+        "boundary": "left",
+        "base": [0.1, 0.0],
+        "amplitude": [0.0, 0.004],
+        "period_steps": 360,
+        "phase": 0.0
+      },
+      "wake_perturbation": {
+        "enabled": false,
+        "center": [175, 101],
+        "radius": [28, 32],
+        "force": [0.0, 0.00045],
+
+        "period_steps": 240,
+        "active_steps": 3500,
+        "phase": 1.5707963268
+      }
+
+
+
+    }
+  },
+  "render": {
+    "type": "vorticity",
+    "backend": "opencv",
+    "output_height": 360,
+    "control_panel_width": 260,
+    "vmax_scale": 0.35,
+    "record_fps": 30,
+    "window_name": "2D Karman Vortex Street"
+  },
+  "camera": {
+    "follow": false,
+    "distance": 1.0,
+    "azimuth": 90.0,
+    "elevation": -90.0,
+    "lookat": [0.0, 0.0, 0.0]
+  },
+  "control": {
+    "dt": 0.01,
+    "warmup_steps": 1,
+    "transition_steps": 1,
+    "start_mode": "steady"
+  },
+  "controls": {
+    "x": "steady"
+  },
+
+  "presets": {
+    "steady": {
+      "type": "constant",
+      "values": []
+    }
+  },
+  "run": {
+    "headless": false,
+    "record": null,
+    "steps": null,
+    "record_start_step": 0,
+    "record_every": 10
+  }
+
+}

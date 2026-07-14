@@ -34,20 +34,53 @@ pip install -r requirements.txt
 ```powershell
 python tools/lbm2d_realtime_control.py --config configs/realtime_2d/eel2d.json
 ```
-<!-- 
-Export a 2D Karman vortex street around a fixed cylinder:
+Run a realtime 2D Karman vortex street around a fixed cylinder using the project 2D rigid-body/LBM coupled solver. The right panel shows Reynolds number and `+` / `-` adjusts it live; `W/A/S/D` moves the cylinder in LBM space:
+
 
 ```powershell
-python tools\lbm_karman_vortex_2d.py --output outputs\karman_vortex_2d.mp4 --nx 600 --ny 200 --steps 3600 --warmup-steps 400 --render-every 2 --u0 0.04 --re 100 --radius 15
+python tools\lbm2d_realtime_control.py --config configs\realtime_2d\karman2d.json
 ```
 
-Useful options:
+To record while viewing, add for example:
 
-- `--re`: Reynolds number based on cylinder diameter. `80` to `200` is a good range for visible vortex shedding.
-- `--u0`: inlet lattice velocity.
-- `--radius`: cylinder radius in lattice cells.
-- `--vmax`: fixed red/white/blue vorticity color range.
-- `--warmup-steps`: initial simulation steps skipped before video recording. -->
+```powershell
+python tools\lbm2d_realtime_control.py --config configs\realtime_2d\karman2d.json --record outputs\karman_vortex_2d.mp4
+```
+
+
+Alternative moving-cylinder setup: the fluid starts still, and the circular solid translates through the domain using the same project LBM solid boundary solver:
+
+```powershell
+python tools\lbm2d_realtime_control.py --config configs\realtime_2d\karman2d_moving.json
+```
+
+The JSON configs define the cylinder model, LBM grid, velocity/viscosity, boundary conditions or prescribed solid motion, and output video path. The default outputs are:
+
+```text
+outputs/karman_vortex_2d.mp4
+outputs/karman_vortex_2d_moving.mp4
+```
+
+
+Important JSON fields:
+
+- `env.xml_path`: MuJoCo cylinder model used by the existing rigid-body coupling path.
+- `env.solid_config`: maps `cylinder_geom` into the LBM solver as a fixed circular solid.
+- `lbm.flow.initial_velocity`: initial uniform inflow.
+- `lbm.flow.viscosity`: lattice viscosity. In realtime mode this is updated when `+` / `-` changes Reynolds number.
+- `lbm.flow.reynolds_control`: enables the right-panel Reynolds control, including initial value, range, step size, velocity, and diameter.
+
+- `lbm.flow.bc_type` / `bc_value`: left velocity inlet and zero-gradient-style copy boundaries elsewhere.
+- `lbm.flow.inlet_perturbation`: small transverse inlet perturbation used to break the perfectly symmetric wake and seed alternating vortex shedding.
+- `lbm.flow.wake_perturbation`: local downstream body-force perturbation near the cylinder wake; this is used to push the symmetric shear layers into alternating vortex shedding.
+- `env.prescribed_motion`: optional LBM-space rigid-body motion, used by `karman2d_moving.json` to translate the cylinder through still fluid.
+
+- `run.headless`, `run.record`, `run.steps`, `run.record_start_step`, `run.record_every`: optional headless export settings. For realtime viewing, keep `run.headless=false`.
+
+
+
+
+
 
 ### Export a 3D LBM rendering video. 
 
@@ -68,7 +101,16 @@ python tools\lbm3d_realtime_control.py --config configs\realtime_3d\eel3d.json -
 
 This preset uses full-resolution volume sampling (`--volume-stride 1`), 15 transparent slices, fixed global `z` vorticity coloring, and a lower color percentile so weaker vortices remain visible.
 
+3D Karman vortex street around a fixed cylinder:
+
+```powershell
+python tools\lbm3d_realtime_control.py --config configs\realtime_3d\karman3d.json --preset steady --export-lbm outputs\karman_vortex_3d_slice.mp4 --export-steps 9000 --export-render-every 10 --record-fps 30 --view-mode orbit --volume-render-mode slices --volume-stride 1 --volume-slice-axis z --volume-slice-count 9 --volume-color-axis z --volume-slice-alpha 0.25 --volume-vmax-percentile 98
+```
+
+The 3D Karman JSON uses `env_type: karman3d`, a fixed MuJoCo cylinder mesh, uniform x-direction inflow, and a small local wake perturbation to seed alternating vortex shedding. With `--export-render-every 10` and `--record-fps 30`, `--export-steps 9000` produces about 30 seconds of video.
+
 Common export options:
+
 
 - `--export-lbm`: Output `.mp4` path. When enabled, no realtime window is opened; the program exits after export.
 - `--export-steps`: Number of simulation steps.

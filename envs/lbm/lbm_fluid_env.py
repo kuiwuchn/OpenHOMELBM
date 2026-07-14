@@ -261,8 +261,10 @@ class LBMFluidEnv(gym.Env):
                 body_or_geom_name=body_or_geom_name,
                 lbm_position=lbm_position,
                 lbm_scale=self.lbm_scale,
+                n_samples=int(config.get("n_samples", 20)),
                 is_body=is_body,
             )
+
 
         # Finalize mappings and create Warp arrays
         solid_ids_list = [cfg["solid_id"] for cfg in self.solid_config]

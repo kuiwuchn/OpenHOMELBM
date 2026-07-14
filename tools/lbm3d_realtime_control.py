@@ -135,9 +135,12 @@ def build_runtime_config(config_data: Dict[str, Any], overrides: Dict[str, Any])
         "use_reduced_order": bool(control.get("use_reduced_order", True)),
     }
 
-    for key in ("mjcf_path", "root_link", "root_position"):
+    for key in ("mjcf_path", "root_link", "root_position", "link_config"):
         if key in model:
             config[key] = model[key]
+    if "flow" in lbm:
+        config["flow_config"] = lbm["flow"]
+
     if "mjcf_path" in config:
         mjcf_path = pathlib.Path(config["mjcf_path"])
         if not mjcf_path.is_absolute():

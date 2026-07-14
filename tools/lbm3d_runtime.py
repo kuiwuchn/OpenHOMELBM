@@ -20,6 +20,9 @@ import numpy as np
 import warp as wp
 from ruamel.yaml import YAML
 
+from envs.lbm3d.lbm_core_3d import HomeFlow3D, cx_d3q27, cy_d3q27, cz_d3q27, w_d3q27
+
+
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -50,8 +53,211 @@ def load_named_config(config_names, overrides=None, config_path=None):
     return SimpleNamespace(**merged)
 
 
+@wp.kernel
+def set_uniform_flow_3d_kernel(flows: wp.array(dtype=HomeFlow3D), ux: float, uy: float, uz: float):
+    world_idx, x, y, z = wp.tid()
+    flow = flows[world_idx]
+    rho = 1.0
+    pop = wp.types.vector(length=27, dtype=wp.float32)
+    u_sqr = ux * ux + uy * uy + uz * uz
+    for i in range(27):
+        cu = cx_d3q27[i] * ux + cy_d3q27[i] * uy + cz_d3q27[i] * uz
+        pop[i] = w_d3q27[i] * rho * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sqr)
+
+    inv_rho = 1.0 / rho
+    pixx = pop[1] + pop[2] + pop[7] + pop[8] + pop[9] + pop[10] + pop[13] + pop[14] + pop[15] + pop[16] + pop[19] + pop[20] + pop[21] + pop[22] + pop[23] + pop[24] + pop[25] + pop[26]
+    pixy = (pop[7] + pop[8] + pop[19] + pop[20] + pop[21] + pop[22]) - (pop[13] + pop[14] + pop[23] + pop[24] + pop[25] + pop[26])
+    pixz = (pop[9] + pop[10] + pop[19] + pop[20] + pop[23] + pop[24]) - (pop[15] + pop[16] + pop[21] + pop[22] + pop[25] + pop[26])
+    piyy = pop[3] + pop[4] + pop[7] + pop[8] + pop[11] + pop[12] + pop[13] + pop[14] + pop[17] + pop[18] + pop[19] + pop[20] + pop[21] + pop[22] + pop[23] + pop[24] + pop[25] + pop[26]
+    piyz = (pop[11] + pop[12] + pop[19] + pop[20] + pop[25] + pop[26]) - (pop[17] + pop[18] + pop[21] + pop[22] + pop[23] + pop[24])
+    pizz = pop[5] + pop[6] + pop[9] + pop[10] + pop[11] + pop[12] + pop[15] + pop[16] + pop[17] + pop[18] + pop[19] + pop[20] + pop[21] + pop[22] + pop[23] + pop[24] + pop[25] + pop[26]
+    cs2_local = pixx
+    pixx = pixx * inv_rho - cs2_local
+    pixy = pixy * inv_rho
+    pixz = pixz * inv_rho
+    piyy = piyy * inv_rho - cs2_local
+    piyz = piyz * inv_rho
+    pizz = pizz * inv_rho - cs2_local
+
+    flow.rho[x, y, z] = rho
+    flow.rho_post[x, y, z] = rho
+    flow.u[x, y, z] = wp.vec3(ux, uy, uz)
+    flow.u_post[x, y, z] = wp.vec3(ux, uy, uz)
+    flow.Sxx[x, y, z] = pixx
+    flow.Sxx_post[x, y, z] = pixx
+    flow.Syy[x, y, z] = piyy
+    flow.Syy_post[x, y, z] = piyy
+    flow.Szz[x, y, z] = pizz
+    flow.Szz_post[x, y, z] = pizz
+    flow.Sxy[x, y, z] = pixy
+    flow.Sxy_post[x, y, z] = pixy
+    flow.Sxz[x, y, z] = pixz
+    flow.Sxz_post[x, y, z] = pixz
+    flow.Syz[x, y, z] = piyz
+    flow.Syz_post[x, y, z] = piyz
+    flow.forcex[x, y, z] = 0.0
+    flow.forcey[x, y, z] = 0.0
+    flow.forcez[x, y, z] = 0.0
+
+
+@wp.kernel
+def set_local_force_3d_kernel(
+    flows: wp.array(dtype=HomeFlow3D),
+    cx: float,
+    cy: float,
+    cz: float,
+    rx: float,
+    ry: float,
+    rz: float,
+    fx: float,
+    fy: float,
+    fz: float,
+):
+    world_idx, x, y, z = wp.tid()
+    flow = flows[world_idx]
+    dx = (float(x) - cx) / wp.max(rx, 1.0e-6)
+    dy = (float(y) - cy) / wp.max(ry, 1.0e-6)
+    dz = (float(z) - cz) / wp.max(rz, 1.0e-6)
+    r2 = dx * dx + dy * dy + dz * dz
+    weight = wp.max(0.0, 1.0 - r2)
+    flow.forcex[x, y, z] = fx * weight
+    flow.forcey[x, y, z] = fy * weight
+    flow.forcez[x, y, z] = fz * weight
+
+
+@wp.kernel
+def set_boundary_velocity_3d_kernel(flows: wp.array(dtype=HomeFlow3D), boundary_idx: int, ux: float, uy: float, uz: float):
+    world_idx = wp.tid()
+    flows[world_idx].bc_value[boundary_idx] = wp.vec3(ux, uy, uz)
+
+
+BOUNDARY_NAME_TO_INDEX_3D = {
+    "left": 0,
+    "right": 1,
+    "top": 2,
+    "bottom": 3,
+    "front": 4,
+    "back": 5,
+}
+
+
+def _runtime_signal(cfg: Dict[str, Any], step: int, default_period: float) -> float:
+    active_steps = cfg.get("active_steps")
+    if active_steps is not None and step > int(active_steps):
+        return 0.0
+    period_steps = max(1.0, float(cfg.get("period_steps", default_period)))
+    phase = float(cfg.get("phase", 0.0))
+    return float(np.sin(2.0 * np.pi * float(step) / period_steps + phase))
+
+
+def apply_lbm_flow_config_3d(env, flow_cfg: Dict[str, Any]) -> None:
+    if not flow_cfg:
+        return
+    for flow in env.lbm_solver.flows:
+        if "viscosity" in flow_cfg:
+            flow.vis_shear = float(flow_cfg["viscosity"])
+        if "bc_type" in flow_cfg:
+            bc_type = [int(v) for v in flow_cfg["bc_type"]]
+            if len(bc_type) != 6:
+                raise ValueError("3D lbm.flow.bc_type must contain 6 values: left, right, top, bottom, front, back")
+            flow.bc_type = wp.types.vector(length=6, dtype=wp.int32)(*bc_type)
+        if "bc_value" in flow_cfg:
+            values = flow_cfg["bc_value"]
+            if len(values) != 6:
+                raise ValueError("3D lbm.flow.bc_value must contain 6 vectors")
+            flow.bc_value = wp.array(tuple(wp.vec3(float(v[0]), float(v[1]), float(v[2])) for v in values), dtype=wp.vec3, device=env.device)
+    env.lbm_solver.flows_wp = wp.array(env.lbm_solver.flows, dtype=HomeFlow3D, device=env.device)
+    if "initial_velocity" in flow_cfg:
+        ux, uy, uz = flow_cfg["initial_velocity"]
+        wp.launch(
+            set_uniform_flow_3d_kernel,
+            dim=(env.nworld, env.nx, env.ny, env.nz),
+            inputs=[env.lbm_solver.flows_wp, float(ux), float(uy), float(uz)],
+            device=env.device,
+        )
+        wp.synchronize()
+
+
+def apply_lbm_runtime_flow_config_3d(env, flow_cfg: Dict[str, Any], step: int) -> None:
+    if not flow_cfg:
+        return
+    perturb = flow_cfg.get("inlet_perturbation") or flow_cfg.get("boundary_perturbation")
+    if perturb:
+        boundary = perturb.get("boundary", "left")
+        boundary_idx = BOUNDARY_NAME_TO_INDEX_3D.get(str(boundary).lower(), int(boundary) if isinstance(boundary, int) else 0)
+        base = perturb.get("base", flow_cfg.get("bc_value", [[0.0, 0.0, 0.0]] * 6)[boundary_idx])
+        amp = perturb.get("amplitude", [0.0, 0.0, 0.0])
+        signal = _runtime_signal(perturb, step, 900.0)
+        wp.launch(
+            set_boundary_velocity_3d_kernel,
+            dim=env.nworld,
+            inputs=[
+                env.lbm_solver.flows_wp,
+                int(boundary_idx),
+                float(base[0]) + float(amp[0]) * signal,
+                float(base[1]) + float(amp[1]) * signal,
+                float(base[2]) + float(amp[2]) * signal,
+            ],
+            device=env.device,
+        )
+    wake = flow_cfg.get("wake_perturbation")
+    if wake and bool(wake.get("enabled", True)):
+        center = wake.get("center", [0.5 * env.nx, 0.5 * env.ny, 0.5 * env.nz])
+        radius = wake.get("radius", [20.0, 20.0, 20.0])
+        force = wake.get("force", [0.0, 0.0, 0.0])
+        signal = _runtime_signal(wake, step, 240.0)
+        wp.launch(
+            set_local_force_3d_kernel,
+            dim=(env.nworld, env.nx, env.ny, env.nz),
+            inputs=[
+                env.lbm_solver.flows_wp,
+                float(center[0]),
+                float(center[1]),
+                float(center[2]),
+                float(radius[0]),
+                float(radius[1]),
+                float(radius[2]),
+                float(force[0]) * signal,
+                float(force[1]) * signal,
+                float(force[2]) * signal,
+            ],
+            device=env.device,
+        )
+
+
+class GenericLBMEnv3D:
+    def __new__(cls, *args, **kwargs):
+        from envs.lbm3d.lbm_fluid_env_3d import LBMFluidEnv3D
+
+        class _GenericLBMEnv3D(LBMFluidEnv3D):
+            def __init__(self, *env_args, flow_config=None, **env_kwargs):
+                self.flow_config = flow_config or {}
+                super().__init__(*env_args, **env_kwargs)
+
+            def reset(self, *reset_args, **reset_kwargs):
+                obs = super().reset(*reset_args, **reset_kwargs)
+                apply_lbm_flow_config_3d(self, self.flow_config)
+                return obs
+
+            def _simulation_step(self):
+                for substep in range(self.per_frame_steps):
+                    step_idx = int(self.step_counts[0]) * self.per_frame_steps + substep
+                    apply_lbm_runtime_flow_config_3d(self, self.flow_config, step_idx)
+                    self.lbm_solver.step()
+                    wp.synchronize()
+
+            def _compute_reward(self, instability_mask=None):
+                return np.zeros(self.nworld, dtype=np.float32)
+
+            def _is_terminated(self, instability_mask=None):
+                return np.zeros(self.nworld, dtype=bool)
+
+        return _GenericLBMEnv3D(*args, **kwargs)
+
+
 class RuntimeVecEnvWrapper:
     """Minimal vector-env adapter used by realtime demos and wave tests."""
+
 
     def __init__(self, env):
         self._env = env
@@ -113,12 +319,19 @@ def make_multitask_env(config, nworld=1):
     mjcf_path = getattr(config, "mjcf_path", None)
     root_link = getattr(config, "root_link", None)
     root_position = getattr(config, "root_position", None)
+    link_config = getattr(config, "link_config", None)
+    flow_config = getattr(config, "flow_config", None)
 
 
-    if env_type == "clownfish_multitask":
+
+
+    if env_type in {"generic_lbm3d", "generic_3d", "karman3d"}:
+        env_class = GenericLBMEnv3D
+    elif env_type == "clownfish_multitask":
 
         from envs.lbm3d.clownfish.clownfish_multitask_env_3d import ClownfishMultiTaskEnv
         env_class = ClownfishMultiTaskEnv
+
     elif env_type == "tuna_multitask":
         from envs.lbm3d.tuna.tuna_multitask_env_3d import TunaMultiTaskEnv
         env_class = TunaMultiTaskEnv
@@ -132,29 +345,48 @@ def make_multitask_env(config, nworld=1):
         from envs.lbm3d.manta.manta_multitask_env_3d import MantaMultiTaskEnv
         env_class = MantaMultiTaskEnv
 
-    env_kwargs = {
-        "nworld": nworld,
-        "nx": nx,
-        "ny": ny,
-        "nz": nz,
-        "lbm_scale": lbm_scale,
-        "fluid_density": fluid_density,
-        "max_episode_steps": config.time_limit,
-        "per_frame_steps": per_frame_steps,
-        "task_switch_interval": task_switch_interval,
-        "k_harmonics": k_harmonics,
-        "b_bar": b_bar,
-        "use_reduced_order": use_reduced_order,
-        "control_mode": control_mode,
-    }
-    if mjcf_path is not None:
-        env_kwargs["mjcf_path"] = str(mjcf_path)
-    if root_link is not None:
-        env_kwargs["root_link"] = root_link
-    if root_position is not None:
-        env_kwargs["root_position"] = tuple(root_position)
+    if env_type in {"generic_lbm3d", "generic_3d", "karman3d"}:
+        env_kwargs = {
+            "mjcf_path": str(mjcf_path),
+            "link_config": link_config,
+            "root_link": root_link,
+            "root_position": tuple(root_position) if root_position is not None else None,
+            "nx": nx,
+            "ny": ny,
+            "nz": nz,
+            "lbm_scale": lbm_scale,
+            "nworld": nworld,
+            "max_episode_steps": config.time_limit,
+            "per_frame_steps": per_frame_steps,
+            "fluid_density": fluid_density,
+            "flow_config": flow_config,
+        }
+    else:
+        env_kwargs = {
+            "nworld": nworld,
+            "nx": nx,
+            "ny": ny,
+            "nz": nz,
+            "lbm_scale": lbm_scale,
+            "fluid_density": fluid_density,
+            "max_episode_steps": config.time_limit,
+            "per_frame_steps": per_frame_steps,
+            "task_switch_interval": task_switch_interval,
+            "k_harmonics": k_harmonics,
+            "b_bar": b_bar,
+            "use_reduced_order": use_reduced_order,
+            "control_mode": control_mode,
+        }
+        if mjcf_path is not None:
+            env_kwargs["mjcf_path"] = str(mjcf_path)
+        if root_link is not None:
+            env_kwargs["root_link"] = root_link
+        if root_position is not None:
+            env_kwargs["root_position"] = tuple(root_position)
 
+    env_kwargs = {key: value for key, value in env_kwargs.items() if value is not None}
     env = env_class(**env_kwargs)
+
 
     return RuntimeVecEnvWrapper(env)
 

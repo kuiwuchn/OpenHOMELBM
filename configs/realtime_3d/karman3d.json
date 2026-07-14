@@ -1,0 +1,84 @@
+{
+  "name": "karman_vortex_3d_cylinder",
+  "animal": "karman",
+  "model": {
+    "env_type": "karman3d",
+    "mjcf_path": "envs/lbm3d/karman/karman_cylinder_3d.xml",
+    "root_link": "cylinder",
+    "time_limit": 200000,
+    "link_config": [
+      {
+        "link_name": "cylinder",
+        "lbm_position": [50, 61, 20],
+
+        "is_static": true
+      }
+    ]
+  },
+  "lbm": {
+    "nx": 240,
+    "ny": 120,
+    "nz": 40,
+    "lbm_scale": 0.05,
+
+    "fluid_density": 1000.0,
+    "per_frame_steps": 5,
+    "flow": {
+      "initial_velocity": [0.08, 0.0, 0.0],
+      "viscosity": 0.00768,
+
+
+
+      "bc_type": [0, 1, 1, 1, 1, 1],
+
+      "bc_value": [
+        [0.08, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0]
+      ],
+      "inlet_perturbation": {
+        "boundary": "left",
+        "base": [0.08, 0.0, 0.0],
+        "amplitude": [0.0, 0.004, 0.0],
+        "period_steps": 360,
+        "phase": 0.0
+      },
+      "wake_perturbation": {
+        "enabled": true,
+        "center": [74, 61, 20],
+        "radius": [28, 30, 18],
+
+
+
+        "force": [0.0, 0.0005, 0.0],
+        "period_steps": 240,
+        "active_steps": 3500,
+        "phase": 1.5707963268
+      }
+    }
+  },
+  "control": {
+    "control_mode": "direct",
+    "task_switch_interval": 0,
+    "start_mode": "steady",
+    "warmup_steps": 1,
+    "transition_steps": 1,
+    "task_by_preset": {
+      "steady": "forward"
+    }
+  },
+  "controls": {
+    "s": "steady"
+  },
+  "presets": {
+    "action_keys": [],
+    "actions": {
+      "steady": {
+        "values": []
+      }
+    }
+  }
+}

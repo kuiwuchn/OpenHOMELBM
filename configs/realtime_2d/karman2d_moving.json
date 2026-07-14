@@ -1,0 +1,78 @@
+{
+  "name": "karman_vortex_2d_moving_cylinder",
+  "env": {
+    "class": "GenericLBM2DEnv",
+    "xml_path": "envs/lbm/karman/karman_cylinder_2d.xml",
+    "solid_config": [
+      {
+        "solid_id": 0,
+        "body_id": 1,
+        "body_or_geom_name": "cylinder_geom",
+        "lbm_position": [90, 101],
+        "is_body": false,
+        "n_samples": 96
+      }
+    ],
+    "prescribed_motion": {
+      "enabled": true,
+      "solid_id": 0,
+      "velocity": [0.04, 0.0],
+      "angular_velocity": 0.0
+    }
+  },
+  "lbm": {
+    "nx": 600,
+    "ny": 200,
+    "lbm_scale": 0.025,
+    "per_frame_steps": 1,
+    "flow": {
+      "initial_velocity": [0.0, 0.0],
+      "viscosity": 0.008,
+      "bc_type": [1, 1, 1, 1],
+      "bc_value": [
+        [0.0, 0.0],
+        [0.0, 0.0],
+        [0.0, 0.0],
+        [0.0, 0.0]
+      ]
+    }
+  },
+  "render": {
+    "type": "vorticity",
+    "backend": "opencv",
+    "output_height": 360,
+    "control_panel_width": 260,
+    "vmax_scale": 0.35,
+    "record_fps": 30,
+    "window_name": "2D Karman Vortex Street - Moving Cylinder"
+  },
+  "camera": {
+    "follow": false,
+    "distance": 1.0,
+    "azimuth": 90.0,
+    "elevation": -90.0,
+    "lookat": [0.0, 0.0, 0.0]
+  },
+  "control": {
+    "dt": 0.01,
+    "warmup_steps": 1,
+    "transition_steps": 1,
+    "start_mode": "steady"
+  },
+  "controls": {
+    "s": "steady"
+  },
+  "presets": {
+    "steady": {
+      "type": "constant",
+      "values": []
+    }
+  },
+  "run": {
+    "headless": true,
+    "record": "outputs/karman_vortex_2d_moving.mp4",
+    "steps": 9000,
+    "record_start_step": 500,
+    "record_every": 2
+  }
+}

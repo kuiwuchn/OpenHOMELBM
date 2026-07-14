@@ -1,0 +1,14 @@
+<mujoco model="karman_cylinder_2d">
+    <compiler angle="degree" coordinate="local"/>
+    <option timestep="0.002" gravity="0 0 0"/>
+
+    <default>
+        <geom contype="0" conaffinity="0" rgba="0.35 0.35 0.35 1"/>
+    </default>
+
+    <worldbody>
+        <body name="cylinder" pos="0 0 0">
+            <geom name="cylinder_geom" type="cylinder" size="1.0 0.05"/>
+        </body>
+    </worldbody>
+</mujoco>

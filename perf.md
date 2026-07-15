@@ -288,6 +288,8 @@ Fix #1 之后，**96% 的帧时间是核心 stream-collide kernel**（矩基/正
 
 `--no-render` benchmark：`avg_step_ms 260→32`，稳态 `recent_fps ~31`。**达成并超过 20 FPS 目标**，且不动 HOME 算法、物理等价。此改动对**所有 3D 环境**（manta/tuna/turtle/clownfish/…）通用，因为它们共用 `stream_and_collide_3d`。
 
+交互命令实测（sim + MuJoCo 渲染 + overlay，整循环体）：**35.5 ms/帧 → 28.2 FPS**。即用户实际运行的 `python tools/lbm3d_realtime_control.py --config configs/realtime_3d/eel3d.json` 从 ~3 FPS 提到 **~28 FPS**（≈9×，全程不改 HOME 算法）。
+
 复现：
 ```
 python tools/lbm3d_realtime_control.py --config configs/realtime_3d/eel3d.json --no-render --benchmark-steps 80

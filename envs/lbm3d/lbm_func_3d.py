@@ -203,10 +203,10 @@ def mlCalDistribution3D(
     Syy: wp.float32, Syz: wp.float32, Szz: wp.float32,
     i: wp.int32
 ) -> wp.float32:
-    """Calculate equilibrium distribution for D3Q27."""
+    """Calculate equilibrium distribution for D3Q27 (indexes vector constants)."""
     cu = cx_d3q27[i] * ux + cy_d3q27[i] * uy + cz_d3q27[i] * uz
     U_sqr = ux * ux + uy * uy + uz * uz
-    
+
     # Higher order terms
     Qxx = cx_d3q27[i] * cx_d3q27[i] - 1.0/3.0
     Qyy = cy_d3q27[i] * cy_d3q27[i] - 1.0/3.0
@@ -214,10 +214,40 @@ def mlCalDistribution3D(
     Qxy = cx_d3q27[i] * cy_d3q27[i]
     Qxz = cx_d3q27[i] * cz_d3q27[i]
     Qyz = cy_d3q27[i] * cz_d3q27[i]
-    
+
     f_neq = 1.5 * (Qxx * Sxx + Qyy * Syy + Qzz * Szz + 2.0 * (Qxy * Sxy + Qxz * Sxz + Qyz * Syz))
-    
+
     f_out = w_d3q27[i] * rhoVar * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * U_sqr + f_neq)
+    return f_out
+
+
+@wp.func
+def mlCalEquilibrium3D_s(
+    rhoVar: wp.float32,
+    ux: wp.float32, uy: wp.float32, uz: wp.float32,
+    Sxx: wp.float32, Sxy: wp.float32, Sxz: wp.float32,
+    Syy: wp.float32, Syz: wp.float32, Szz: wp.float32,
+    dx: wp.float32, dy: wp.float32, dz: wp.float32, wi: wp.float32
+) -> wp.float32:
+    """Scalar-argument twin of mlCalDistribution3D: takes the lattice velocity
+    (dx,dy,dz) and weight wi directly instead of indexing the vector constants.
+    With dx=cx[i], dy=cy[i], dz=cz[i], wi=w[i] the arithmetic is identical, so
+    the returned value is bit-identical to mlCalDistribution3D(...,i). This lets
+    the caller use a runtime loop + global-memory constants (no register-resident
+    vector indexing, which spills)."""
+    cu = dx * ux + dy * uy + dz * uz
+    U_sqr = ux * ux + uy * uy + uz * uz
+
+    Qxx = dx * dx - 1.0/3.0
+    Qyy = dy * dy - 1.0/3.0
+    Qzz = dz * dz - 1.0/3.0
+    Qxy = dx * dy
+    Qxz = dx * dz
+    Qyz = dy * dz
+
+    f_neq = 1.5 * (Qxx * Sxx + Qyy * Syy + Qzz * Szz + 2.0 * (Qxy * Sxy + Qxz * Sxz + Qyz * Syz))
+
+    f_out = wi * rhoVar * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * U_sqr + f_neq)
     return f_out
 
 
@@ -226,6 +256,8 @@ def get_cutcell_multi_3d(
     mesh_transforms: wp.array(dtype=wp.transform),
     mesh_scale_sizes: wp.array(dtype=wp.vec3),
     mesh_ids: wp.array(dtype=wp.uint64),
+    solid_position: wp.array(dtype=wp.vec3),
+    solid_bound_radius: wp.array(dtype=wp.float32),
     n_objects: int,
     ray_origin: wp.vec3,
     ray_direction: wp.vec3
@@ -233,15 +265,25 @@ def get_cutcell_multi_3d(
     """
     Query all objects for intersection.
     Returns: vec3(cutcell_distance, solid_id, 0) or (-1, -1, 0) if no hit.
+
+    Narrow-band culling: solids whose bounding sphere (center=solid_position,
+    radius=solid_bound_radius) does not reach within one lattice link of the
+    ray origin are skipped. A cut-cell hit lies within |ray_direction|*cutcell
+    <= sqrt(3) < 2 of ray_origin, so a margin of 2.0 is conservative and this
+    culling cannot change results.
     """
     cutcell = float(-1.0)
     hit_solid_id = int(-1)
-    
+
     for solid_id in range(n_objects):
         mesh_id = mesh_ids[solid_id]
         if mesh_id == wp.uint64(0):
             continue
-            
+
+        # Skip solids too far to possibly produce a cut-cell along this link.
+        if wp.length(ray_origin - solid_position[solid_id]) > solid_bound_radius[solid_id] + 2.0:
+            continue
+
         transform = mesh_transforms[solid_id]
         scale = mesh_scale_sizes[solid_id]
         
@@ -326,7 +368,6 @@ def stream_and_collide_3d(flows: wp.array(dtype=HomeFlow3D)):
     flow = flows[world_idx]
     
     if flow.flag[x, y, z] == ML_FLUID:
-        pop = wp.types.vector(length=27, dtype=wp.float32)
         rhoVar_cur = flow.rho[x, y, z]
         ux_cur = flow.u[x, y, z][0]
         uy_cur = flow.u[x, y, z][1]
@@ -337,44 +378,84 @@ def stream_and_collide_3d(flows: wp.array(dtype=HomeFlow3D)):
         Sxy_cur = flow.Sxy[x, y, z]
         Sxz_cur = flow.Sxz[x, y, z]
         Syz_cur = flow.Syz[x, y, z]
-        
-        for i in range(27):
-            dx = cx_d3q27[i]
-            dy = cy_d3q27[i]
-            dz = cz_d3q27[i]
+
+        # Narrow-band culling: determine once per cell whether ANY solid is close
+        # enough that a cut-cell is possible along some lattice link. Cells outside
+        # every solid's (radius + margin) sphere can only ever take the plain
+        # streaming branch, so we skip all mesh ray queries for them. This is exact
+        # (see get_cutcell_multi_3d): a hit lies within sqrt(3) < 2 of the cell.
+        cell_pos = wp.vec3(float(x), float(y), float(z))
+        near_solid = int(0)
+        for sid in range(flow.n_objects):
+            if flow.mesh_ids[sid] == wp.uint64(0):
+                continue
+            if wp.length(cell_pos - flow.solid_position[sid]) <= flow.solid_bound_radius[sid] + 2.0:
+                near_solid = 1
+
+        # Moment accumulators (see Fix #3 note / perf.md). The 27 directions are
+        # iterated with a RUNTIME loop over flow.n_dirs and the D3Q27 constants are
+        # read from global memory (flow.lat_e / lat_w / lat_inv). This avoids Warp's
+        # auto-unroll of `range(27)` — which over-pipelines into ~760 B register
+        # spills and runs ~14x slower — and avoids register-materialising the
+        # 27-element vector constants. Each streamed population is distributed into
+        # named scalar accumulators in ascending-i order (group membership = sign
+        # pattern of the lattice velocity), matching the original hand-written moment
+        # sums up to float summation associativity (~1e-6, below the sim's existing
+        # atomic-order noise). Math, equilibrium and collision are unchanged.
+        rho_acc = float(0.0)
+        uxp = float(0.0); uxm = float(0.0)
+        uyp = float(0.0); uym = float(0.0)
+        uzp = float(0.0); uzm = float(0.0)
+        pixx = float(0.0); piyy = float(0.0); pizz = float(0.0)
+        pixy_p = float(0.0); pixy_m = float(0.0)
+        pixz_p = float(0.0); pixz_m = float(0.0)
+        piyz_p = float(0.0); piyz_m = float(0.0)
+
+        for i in range(flow.n_dirs):
+            e_i = flow.lat_e[i]
+            dx = e_i[0]
+            dy = e_i[1]
+            dz = e_i[2]
+            wi = flow.lat_w[i]
             x1 = x - int(dx)
             y1 = y - int(dy)
             z1 = z - int(dz)
-            
+
+            pop_i = float(0.0)
             if x1 >= 0 and x1 < flow.nx and y1 >= 0 and y1 < flow.ny and z1 >= 0 and z1 < flow.nz:
-                ray_origin = wp.vec3(float(x), float(y), float(z))
-                ray_direction = wp.vec3(-dx, -dy, -dz)
-                
-                # Query all objects for intersection
-                result = get_cutcell_multi_3d(
-                    flow.mesh_transforms,
-                    flow.mesh_scale_sizes,
-                    flow.mesh_ids,
-                    flow.n_objects,
-                    ray_origin,
-                    ray_direction
-                )
-                cutcell = result[0]
-                solid_id = int(result[1])
-                
+                cutcell = float(-1.0)
+                solid_id = int(-1)
+                if near_solid == 1:
+                    ray_origin = wp.vec3(float(x), float(y), float(z))
+                    ray_direction = wp.vec3(-dx, -dy, -dz)
+
+                    # Query all objects for intersection
+                    result = get_cutcell_multi_3d(
+                        flow.mesh_transforms,
+                        flow.mesh_scale_sizes,
+                        flow.mesh_ids,
+                        flow.solid_position,
+                        flow.solid_bound_radius,
+                        flow.n_objects,
+                        ray_origin,
+                        ray_direction
+                    )
+                    cutcell = result[0]
+                    solid_id = int(result[1])
+
                 if cutcell >= 0.0 and cutcell <= 1.0 and solid_id >= 0:
                     # Get transforms for current and last frame
                     transform_current = flow.mesh_transforms[solid_id]
                     transform_last = flow.mesh_transforms_last[solid_id]
                     is_initialized = flow.mesh_transforms_initialized[solid_id]
-                    
+
                     # Calculate hit point
                     hit_point = ray_origin + ray_direction * cutcell
-                    
+
                     # Transform to local coordinates
                     inv_transform = wp.transform_inverse(transform_current)
                     hit_point_local = wp.transform_point(inv_transform, hit_point)
-                    
+
                     # Calculate velocity using frame-to-frame position difference
                     if is_initialized > 0:
                         p_world_current = wp.transform_point(transform_current, hit_point_local)
@@ -391,7 +472,7 @@ def stream_and_collide_3d(flows: wp.array(dtype=HomeFlow3D)):
                             solid_angle_v[0]*dv_fallback[1] - solid_angle_v[1]*dv_fallback[0]
                         )
                         u_p = solid_linear_v + vel_angle_fallback
-                    
+
                     # Calculate dv for torque calculation
                     solid_pos = flow.solid_position[solid_id]
                     dv = hit_point - solid_pos
@@ -402,18 +483,21 @@ def stream_and_collide_3d(flows: wp.array(dtype=HomeFlow3D)):
                     Syy_s = u_p[1]*u_p[1] + Syy_cur - uy_cur*uy_cur
                     Syz_s = u_p[1]*u_p[2] + Syz_cur - uy_cur*uz_cur
                     Szz_s = u_p[2]*u_p[2] + Szz_cur - uz_cur*uz_cur
-                    
-                    pop[i] = mlCalDistribution3D(rhoVar_cur, u_p[0], u_p[1], u_p[2], 
-                                                  Sxx_s, Sxy_s, Sxz_s, Syy_s, Syz_s, Szz_s, i)
-                    
-                    cur_f = mlCalDistribution3D(rhoVar_cur, ux_cur, uy_cur, uz_cur,
+
+                    pop_i = mlCalEquilibrium3D_s(rhoVar_cur, u_p[0], u_p[1], u_p[2],
+                                                 Sxx_s, Sxy_s, Sxz_s, Syy_s, Syz_s, Szz_s,
+                                                 dx, dy, dz, wi)
+
+                    inv_i = flow.lat_inv[i]
+                    e_inv = flow.lat_e[inv_i]
+                    cur_f = mlCalEquilibrium3D_s(rhoVar_cur, ux_cur, uy_cur, uz_cur,
                                                  Sxx_cur, Sxy_cur, Sxz_cur, Syy_cur, Syz_cur, Szz_cur,
-                                                 indexd3q27Inv[i])
-                    
+                                                 e_inv[0], e_inv[1], e_inv[2], flow.lat_w[inv_i])
+
                     # Calculate boundary force
-                    bndForcex = cur_f * (cx_d3q27[indexd3q27Inv[i]] - u_p[0]) - pop[i] * (cx_d3q27[i] - u_p[0])
-                    bndForcey = cur_f * (cy_d3q27[indexd3q27Inv[i]] - u_p[1]) - pop[i] * (cy_d3q27[i] - u_p[1])
-                    bndForcez = cur_f * (cz_d3q27[indexd3q27Inv[i]] - u_p[2]) - pop[i] * (cz_d3q27[i] - u_p[2])
+                    bndForcex = cur_f * (e_inv[0] - u_p[0]) - pop_i * (dx - u_p[0])
+                    bndForcey = cur_f * (e_inv[1] - u_p[1]) - pop_i * (dy - u_p[1])
+                    bndForcez = cur_f * (e_inv[2] - u_p[2]) - pop_i * (dz - u_p[2])
 
                     # Calculate boundary torque
                     bndTorquex = dv[1] * bndForcez - dv[2] * bndForcey
@@ -436,38 +520,61 @@ def stream_and_collide_3d(flows: wp.array(dtype=HomeFlow3D)):
                     Sxy = flow.Sxy[x1, y1, z1]
                     Sxz = flow.Sxz[x1, y1, z1]
                     Syz = flow.Syz[x1, y1, z1]
-                    pop[i] = mlCalDistribution3D(rhoVar, ux, uy, uz, Sxx, Sxy, Sxz, Syy, Syz, Szz, i)
-                    if pop[i] < 0.0:
-                        pop[i] = 0.0
+                    pop_i = mlCalEquilibrium3D_s(rhoVar, ux, uy, uz, Sxx, Sxy, Sxz, Syy, Syz, Szz,
+                                                 dx, dy, dz, wi)
+                    if pop_i < 0.0:
+                        pop_i = 0.0
+
+            # Distribute pop_i into moment accumulators in ascending-i order.
+            rho_acc = rho_acc + pop_i
+            if dx > 0.0:
+                uxp = uxp + pop_i
+                pixx = pixx + pop_i
+            elif dx < 0.0:
+                uxm = uxm + pop_i
+                pixx = pixx + pop_i
+            if dy > 0.0:
+                uyp = uyp + pop_i
+                piyy = piyy + pop_i
+            elif dy < 0.0:
+                uym = uym + pop_i
+                piyy = piyy + pop_i
+            if dz > 0.0:
+                uzp = uzp + pop_i
+                pizz = pizz + pop_i
+            elif dz < 0.0:
+                uzm = uzm + pop_i
+                pizz = pizz + pop_i
+            dxy = dx * dy
+            if dxy > 0.0:
+                pixy_p = pixy_p + pop_i
+            elif dxy < 0.0:
+                pixy_m = pixy_m + pop_i
+            dxz = dx * dz
+            if dxz > 0.0:
+                pixz_p = pixz_p + pop_i
+            elif dxz < 0.0:
+                pixz_m = pixz_m + pop_i
+            dyz = dy * dz
+            if dyz > 0.0:
+                piyz_p = piyz_p + pop_i
+            elif dyz < 0.0:
+                piyz_m = piyz_m + pop_i
 
         Fx = flow.forcex[x, y, z]
         Fy = flow.forcey[x, y, z]
         Fz = flow.forcez[x, y, z]
-        
-        rhoVar = float(0.0)
-        for k in range(27):
-            rhoVar = rhoVar + pop[k]
-        
+
+        rhoVar = rho_acc
         invRho = 1.0 / rhoVar
-        ux = ((pop[1] + pop[7] + pop[9] + pop[13] + pop[15] + pop[19] + pop[21] + pop[23] + pop[26]) - 
-              (pop[2] + pop[8] + pop[10] + pop[14] + pop[16] + pop[20] + pop[22] + pop[24] + pop[25]) + 0.5 * Fx) * invRho
-        uy = ((pop[3] + pop[7] + pop[11] + pop[14] + pop[17] + pop[19] + pop[21] + pop[24] + pop[25]) - 
-              (pop[4] + pop[8] + pop[12] + pop[13] + pop[18] + pop[20] + pop[22] + pop[23] + pop[26]) + 0.5 * Fy) * invRho
-        uz = ((pop[5] + pop[9] + pop[11] + pop[16] + pop[18] + pop[19] + pop[22] + pop[23] + pop[25]) - 
-              (pop[6] + pop[10] + pop[12] + pop[15] + pop[17] + pop[20] + pop[21] + pop[24] + pop[26]) + 0.5 * Fz) * invRho
-        
-        pixx = (pop[1] + pop[2] + pop[7] + pop[8] + pop[9] + pop[10] + pop[13] + pop[14] + 
-                pop[15] + pop[16] + pop[19] + pop[20] + pop[21] + pop[22] + pop[23] + pop[24] + pop[25] + pop[26])
-        pixy = ((pop[7] + pop[8] + pop[19] + pop[20] + pop[21] + pop[22]) - 
-                (pop[13] + pop[14] + pop[23] + pop[24] + pop[25] + pop[26]))
-        pixz = ((pop[9] + pop[10] + pop[19] + pop[20] + pop[23] + pop[24]) - 
-                (pop[15] + pop[16] + pop[21] + pop[22] + pop[25] + pop[26]))
-        piyy = (pop[3] + pop[4] + pop[7] + pop[8] + pop[11] + pop[12] + pop[13] + pop[14] + 
-                pop[17] + pop[18] + pop[19] + pop[20] + pop[21] + pop[22] + pop[23] + pop[24] + pop[25] + pop[26])
-        piyz = ((pop[11] + pop[12] + pop[19] + pop[20] + pop[25] + pop[26]) - 
-                (pop[17] + pop[18] + pop[21] + pop[22] + pop[23] + pop[24]))
-        pizz = (pop[5] + pop[6] + pop[9] + pop[10] + pop[11] + pop[12] + pop[15] + pop[16] + 
-                pop[17] + pop[18] + pop[19] + pop[20] + pop[21] + pop[22] + pop[23] + pop[24] + pop[25] + pop[26])
+        ux = (uxp - uxm + 0.5 * Fx) * invRho
+        uy = (uyp - uym + 0.5 * Fy) * invRho
+        uz = (uzp - uzm + 0.5 * Fz) * invRho
+
+        pixy = pixy_p - pixy_m
+        pixz = pixz_p - pixz_m
+        piyz = piyz_p - piyz_m
+
 
         Omega = 1.0 / (flow.vis_shear * 3.0 + 0.5)
 

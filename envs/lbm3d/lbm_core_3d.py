@@ -107,6 +107,12 @@ class HomeFlow3D:
     solid_inertia: wp.array(dtype=wp.mat33, ndim=1)
     solid_inertia_inv: wp.array(dtype=wp.mat33, ndim=1)
 
+    # Narrow-band culling: per-solid bounding-sphere radius (LBM cell units,
+    # rotation-invariant). A fluid cell farther than radius + margin from a
+    # solid's center cannot produce a cut-cell along any lattice link, so its
+    # mesh ray queries can be safely skipped.
+    solid_bound_radius: wp.array(dtype=wp.float32, ndim=1)
+
     # Render buffers
     u_img_xy: wp.array2d(dtype=wp.float32)  # XY plane (top-down view, z slice)
     u_img_xz: wp.array2d(dtype=wp.float32)  # YZ plane (side view from right, x slice)  
@@ -182,6 +188,11 @@ class HomeFlow3D:
         self.solid_quaternion = wp.zeros((n_objects,), dtype=wp.vec4)
         self.solid_inertia = wp.zeros((n_objects,), dtype=wp.mat33)
         self.solid_inertia_inv = wp.zeros((n_objects,), dtype=wp.mat33)
+
+        # Bounding-sphere radius per solid (0 until set by create_solid_from_mesh).
+        # A margin is added at query time; a radius of 0 restricts the narrow
+        # band to the immediate neighborhood of solid_position.
+        self.solid_bound_radius = wp.zeros((n_objects,), dtype=wp.float32)
 
         # Render buffers
         self.u_img_xy = wp.zeros((nx, ny), dtype=wp.float32)  # XY plane slice (top-down view)

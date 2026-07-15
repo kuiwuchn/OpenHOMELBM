@@ -153,6 +153,15 @@ class LBM_Solver3D:
         # Create warp mesh
         vertices = np.array(scaled_vertices, dtype=np.float32)
         indices = np.array(mesh_local.faces, dtype=np.int32).flatten()
+
+        # Bounding-sphere radius (in LBM cell units) for narrow-band culling.
+        # Vertices are already scaled and expressed in the body-local frame whose
+        # origin is the mesh transform's rotation center, so the max vertex norm
+        # is a rotation-invariant conservative bound on the solid's extent.
+        if vertices.shape[0] > 0:
+            bound_radius = float(np.linalg.norm(vertices, axis=1).max())
+        else:
+            bound_radius = 0.0
         
         with wp.ScopedDevice(self.device):
             pos_wp = wp.array(vertices, requires_grad=True, dtype=wp.vec3)
@@ -177,7 +186,11 @@ class LBM_Solver3D:
             quaternions_np = flow.solid_quaternion.numpy()
             quaternions_np[solid_id] = init_quaternion
             flow.solid_quaternion = wp.array(quaternions_np, dtype=wp.vec4)
-            
+
+            bound_radius_np = flow.solid_bound_radius.numpy()
+            bound_radius_np[solid_id] = bound_radius
+            flow.solid_bound_radius = wp.array(bound_radius_np, dtype=wp.float32)
+
             # Update mesh transform
             self._update_mesh_transform(flow, solid_id)
         

@@ -226,6 +226,8 @@ def get_cutcell_multi_3d(
     mesh_transforms: wp.array(dtype=wp.transform),
     mesh_scale_sizes: wp.array(dtype=wp.vec3),
     mesh_ids: wp.array(dtype=wp.uint64),
+    solid_position: wp.array(dtype=wp.vec3),
+    solid_bound_radius: wp.array(dtype=wp.float32),
     n_objects: int,
     ray_origin: wp.vec3,
     ray_direction: wp.vec3
@@ -233,15 +235,25 @@ def get_cutcell_multi_3d(
     """
     Query all objects for intersection.
     Returns: vec3(cutcell_distance, solid_id, 0) or (-1, -1, 0) if no hit.
+
+    Narrow-band culling: solids whose bounding sphere (center=solid_position,
+    radius=solid_bound_radius) does not reach within one lattice link of the
+    ray origin are skipped. A cut-cell hit lies within |ray_direction|*cutcell
+    <= sqrt(3) < 2 of ray_origin, so a margin of 2.0 is conservative and this
+    culling cannot change results.
     """
     cutcell = float(-1.0)
     hit_solid_id = int(-1)
-    
+
     for solid_id in range(n_objects):
         mesh_id = mesh_ids[solid_id]
         if mesh_id == wp.uint64(0):
             continue
-            
+
+        # Skip solids too far to possibly produce a cut-cell along this link.
+        if wp.length(ray_origin - solid_position[solid_id]) > solid_bound_radius[solid_id] + 2.0:
+            continue
+
         transform = mesh_transforms[solid_id]
         scale = mesh_scale_sizes[solid_id]
         
@@ -337,7 +349,20 @@ def stream_and_collide_3d(flows: wp.array(dtype=HomeFlow3D)):
         Sxy_cur = flow.Sxy[x, y, z]
         Sxz_cur = flow.Sxz[x, y, z]
         Syz_cur = flow.Syz[x, y, z]
-        
+
+        # Narrow-band culling: determine once per cell whether ANY solid is close
+        # enough that a cut-cell is possible along some lattice link. Cells outside
+        # every solid's (radius + margin) sphere can only ever take the plain
+        # streaming branch, so we skip all mesh ray queries for them. This is exact
+        # (see get_cutcell_multi_3d): a hit lies within sqrt(3) < 2 of the cell.
+        cell_pos = wp.vec3(float(x), float(y), float(z))
+        near_solid = int(0)
+        for sid in range(flow.n_objects):
+            if flow.mesh_ids[sid] == wp.uint64(0):
+                continue
+            if wp.length(cell_pos - flow.solid_position[sid]) <= flow.solid_bound_radius[sid] + 2.0:
+                near_solid = 1
+
         for i in range(27):
             dx = cx_d3q27[i]
             dy = cy_d3q27[i]
@@ -345,23 +370,28 @@ def stream_and_collide_3d(flows: wp.array(dtype=HomeFlow3D)):
             x1 = x - int(dx)
             y1 = y - int(dy)
             z1 = z - int(dz)
-            
+
             if x1 >= 0 and x1 < flow.nx and y1 >= 0 and y1 < flow.ny and z1 >= 0 and z1 < flow.nz:
-                ray_origin = wp.vec3(float(x), float(y), float(z))
-                ray_direction = wp.vec3(-dx, -dy, -dz)
-                
-                # Query all objects for intersection
-                result = get_cutcell_multi_3d(
-                    flow.mesh_transforms,
-                    flow.mesh_scale_sizes,
-                    flow.mesh_ids,
-                    flow.n_objects,
-                    ray_origin,
-                    ray_direction
-                )
-                cutcell = result[0]
-                solid_id = int(result[1])
-                
+                cutcell = float(-1.0)
+                solid_id = int(-1)
+                if near_solid == 1:
+                    ray_origin = wp.vec3(float(x), float(y), float(z))
+                    ray_direction = wp.vec3(-dx, -dy, -dz)
+
+                    # Query all objects for intersection
+                    result = get_cutcell_multi_3d(
+                        flow.mesh_transforms,
+                        flow.mesh_scale_sizes,
+                        flow.mesh_ids,
+                        flow.solid_position,
+                        flow.solid_bound_radius,
+                        flow.n_objects,
+                        ray_origin,
+                        ray_direction
+                    )
+                    cutcell = result[0]
+                    solid_id = int(result[1])
+
                 if cutcell >= 0.0 and cutcell <= 1.0 and solid_id >= 0:
                     # Get transforms for current and last frame
                     transform_current = flow.mesh_transforms[solid_id]

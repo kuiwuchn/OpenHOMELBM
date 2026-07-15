@@ -243,7 +243,7 @@ starfish3d_mg:
   encoder: {mlp_keys: '.*', cnn_keys: '$^'}
   decoder: {mlp_keys: '.*', cnn_keys: '$^'}
 
-# 3D Starfish with Multi-Sine Control (频域PD控制)
+# 3D Starfish with Multi-Sine Control (frequency-domain PD control)
 starfish3d_multi_sine:
   env_type: 'starfish3d_mg'
   time_limit: 2000
@@ -298,7 +298,7 @@ serial_fish:
   encoder: {mlp_keys: '.*', cnn_keys: '$^'}
   decoder: {mlp_keys: '.*', cnn_keys: '$^'}
 
-# 3D Eel/Ribbon Fish multi-goal environment (鳗鱼/带鱼机器人)
+# 3D Eel/Ribbon Fish multi-goal environment
 eel3d:
   env_type: 'eel3d'
   time_limit: 2000
@@ -2345,7 +2345,7 @@ eel_hierarchical:
   encoder: {mlp_keys: '.*', cnn_keys: '$^'}
   decoder: {mlp_keys: '.*', cnn_keys: '$^'}
 
-# 3D Eel with Multi-Sine Control (频域PD控制)
+# 3D Eel with Multi-Sine Control (frequency-domain PD control)
 eel3d_multi_sine:
   env_type: 'eel3d'
   time_limit: 2000

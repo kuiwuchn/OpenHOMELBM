@@ -379,13 +379,13 @@ class FishLBMEnv(LBMFluidEnv):
         include_image: bool = False,
         image_size: Tuple[int, int] = (64, 64),
     ):
-        # 使用模块相对路径
+        # Use a module-relative path.
         if xml_path is None:
             import os
 
             xml_path = os.path.join(os.path.dirname(__file__), "fish_2d_v3.xml")
 
-        # 保存图像相关参数（在 super().__init__ 之前）
+        # Store image settings before base initialization.
         self.include_image = include_image
         self.image_size = image_size
 
@@ -475,17 +475,17 @@ class FishLBMEnv(LBMFluidEnv):
         self._current_actions_wp = None  # Will be set in step()
         self._prev_actions_wp = None  # Will be set in reset()
 
-        # 图像观测相关
+        # Configure image observations.
         if self.include_image:
             from .lbm_func import get_velocity_rgb
 
             self._get_velocity_rgb = get_velocity_rgb
-            # 预分配图像缓冲区 (nworld, H, W, C)
+            # Preallocate the image buffer.
             self._image_buffer = np.zeros(
                 (nworld, self.image_size[0], self.image_size[1], 3), dtype=np.uint8
             )
-            # 最大速度用于归一化 (LBM 格子单位)
-            self._max_velocity = 0.3  # 根据实际流场调整
+            # Normalize with the maximum lattice velocity.
+            self._max_velocity = 0.3  # Tune for the expected flow.
 
     def _create_observation_space(self) -> spaces.Space:
         """
@@ -497,7 +497,7 @@ class FishLBMEnv(LBMFluidEnv):
         obs_dim = 17 * 2  # temporal stacking: before + after action
 
         if self.include_image:
-            # 返回 Dict 空间，包含 vector 和 image
+            # Return vector and image observations.
             return spaces.Dict(
                 {
                     "vector": spaces.Box(
@@ -521,21 +521,21 @@ class FishLBMEnv(LBMFluidEnv):
 
     def _get_velocity_image(self) -> np.ndarray:
         """
-        获取所有 world 的速度场图像 (3通道)
+        Return three-channel velocity images for all worlds.
 
-        R: 速度大小 (magnitude)
-        G: ux (x方向速度)
-        B: uy (y方向速度)
+        R: velocity magnitude
+        G: x velocity
+        B: y velocity
 
         Returns:
-            np.ndarray: (nworld, H, W, 3) 图像数组，uint8
+            np.ndarray: uint8 images shaped (nworld, H, W, 3)
         """
         import cv2
 
         for world_idx in range(self.nworld):
             flow = self.solver.flows[world_idx]
 
-            # 计算 3 通道速度场
+            # Compute the three-channel velocity field.
             wp.launch(
                 self._get_velocity_rgb,
                 dim=(flow.nx, flow.ny),
@@ -544,18 +544,18 @@ class FishLBMEnv(LBMFluidEnv):
 
         wp.synchronize()
 
-        # 读取并处理图像
+        # Read and process each image.
         for world_idx in range(self.nworld):
             flow = self.solver.flows[world_idx]
             # (nx, ny, 3) -> (ny, nx, 3)
             img_rgb = flow.u_img_rgb.numpy().transpose(1, 0, 2)  # (ny, nx, 3)
-            # 翻转 y 轴，使 LBM 的 +y 向上对应图像上方
+            # Flip y so LBM +y points upward in the image.
             img_rgb = np.flipud(img_rgb)
 
-            # 转换为 uint8 [0, 255]
+            # Convert to uint8 [0, 255].
             img_uint8 = (img_rgb * 255).astype(np.uint8)
 
-            # 调整大小
+            # Resize the image.
             # Downscale with AREA to reduce blur; upscale with CUBIC for smoother edges
             interp = (
                 cv2.INTER_AREA

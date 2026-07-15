@@ -6,8 +6,8 @@ Install if needed:
 Run with realtime LBM rendering and right-side SAC panel:
     python train_sac_minimal.py --render --warmup-steps 50 --viscosity 0.05
 
-Run 2D eel training with SAC controlling four CPG parameters:
-    python train_sac_minimal.py --animal eel --control-mode cpg --per-frame-steps 4 --cpg-hold-steps 10
+Run projected 2D eel training with SAC controlling four planar parameters:
+    python train_sac_minimal.py --animal eel --control-mode cpg --per-frame-steps 8 --cpg-ramp-steps 10 --cpg-hold-steps 30
 
 
 
@@ -19,6 +19,7 @@ Run without rendering:
 
 import argparse
 import json
+import math
 from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -30,7 +31,7 @@ import numpy as np
 import warp as wp
 from gymnasium import spaces
 from stable_baselines3 import SAC
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 
 from envs.lbm.eel.eel_lbm_env import Eel2DLBMEnv
@@ -48,11 +49,18 @@ class SingleEnvWrapper(gym.Env):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, env, warmup_steps: int = 50, viscosity: float = 0.05):
+    def __init__(
+        self,
+        env,
+        warmup_steps: int = 50,
+        viscosity: float = 0.05,
+        latest_observation_only: bool = False,
+    ):
         super().__init__()
         self.env = env
         self.warmup_steps = max(0, int(warmup_steps))
         self.viscosity = float(viscosity)
+        self.latest_observation_only = bool(latest_observation_only)
 
 
         act = env.action_space
@@ -64,18 +72,30 @@ class SingleEnvWrapper(gym.Env):
             high=act.high[0].astype(np.float32),
             dtype=np.float32,
         )
+        observation_dim = int(np.prod(obs.shape[1:]))
+        if self.latest_observation_only:
+            # Drop the duplicated pre-action frame in CPG mode.
+            if observation_dim % 2 != 0:
+                raise ValueError("Temporal observation must have an even dimension")
+            observation_dim //= 2
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=obs.shape[1:],
+            shape=(observation_dim,),
             dtype=np.float32,
         )
+
+    def _single_observation(self, observation: np.ndarray) -> np.ndarray:
+        result = np.asarray(observation[0], dtype=np.float32)
+        if self.latest_observation_only:
+            result = result[result.size // 2 :]
+        return result
 
     def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         obs = self.env.reset(seed=seed, options=options)
         set_lbm_viscosity(self.env, self.viscosity)
         if self.warmup_steps > 0:
-
+            # Settle the coupled solver with neutral controls.
             zero_action = np.zeros(self.env.action_space.shape, dtype=np.float32)
             for _ in range(self.warmup_steps):
                 obs, _, done, _ = self.env.step(zero_action)
@@ -84,7 +104,7 @@ class SingleEnvWrapper(gym.Env):
                     break
             if hasattr(self.env, "current_steps"):
                 self.env.current_steps[...] = 0
-        return np.asarray(obs[0], dtype=np.float32), {}
+        return self._single_observation(obs), {}
 
 
 
@@ -94,7 +114,7 @@ class SingleEnvWrapper(gym.Env):
         info = info or {}
         terminated = bool(np.asarray(info.get("terminated", done))[0])
         truncated = bool(np.asarray(info.get("truncated", [False]))[0])
-        return np.asarray(obs[0], dtype=np.float32), float(reward[0]), terminated, truncated, info
+        return self._single_observation(obs), float(reward[0]), terminated, truncated, info
 
     def close(self):
         if hasattr(self.env, "close"):
@@ -102,38 +122,54 @@ class SingleEnvWrapper(gym.Env):
 
 
 class EelCPGWrapper(gym.Env):
-    """Turn four normalized SAC actions into a traveling wave for all eel joints.
+    """Drive the projected eel with four planar parameters from eel2d.json.
 
-    SAC action dimensions are, in order: amplitude, frequency, spatial phase lag,
-    and head bias.  The oscillator phase is integrated continuously, so changing
-    frequency does not introduce a discontinuous phase jump.
+    SAC action dimensions are, in order: A, omega, k_wave and head_bias. Roll is
+    fixed at zero because it has no useful degree of freedom in the 2D task.
+    The generated actuator controls intentionally match preset_action() in
+    tools/lbm2d_realtime_control.py, including its .01-second wave clock and
+    per-actuator position-control ranges.
     """
 
     metadata = {"render_modes": []}
 
-    PARAMETER_NAMES = ("amplitude", "frequency_hz", "spatial_phase_rad", "head_bias")
-    PARAMETER_LOW = np.array([0.05, 0.5, 0.25 * np.pi, -0.20], dtype=np.float32)
-    PARAMETER_HIGH = np.array([0.60, 3.0, 1.50 * np.pi, 0.20], dtype=np.float32)
-    DEFAULT_PARAMETERS = np.array([0.28, 2.0, 0.825 * np.pi, 0.0], dtype=np.float32)
+    PARAMETER_NAMES = ("A", "omega", "k_wave", "head_bias")
+    PARAMETER_LOW = np.array([0.10, -1.0, 0.30, -0.20], dtype=np.float32)
+    PARAMETER_HIGH = np.array([0.60, 1.0, 0.90, 0.20], dtype=np.float32)
+    DEFAULT_PARAMETERS = np.array([0.36, -1.0, 0.65, 0.0], dtype=np.float32)
+    OMEGA_MAX = 5.0 * np.pi
+    K_MAX = 1.5
+    HEAD_AMPLITUDE = 0.05
+    WAVE_DT = 0.01
 
     def __init__(
         self,
         env: SingleEnvWrapper,
-        smoothing: float = 0.25,
-        parameter_hold_steps: int = 20,
+        smoothing: float = 1.0,
+        parameter_ramp_steps: int = 10,
+        parameter_hold_steps: int = 30,
     ):
         super().__init__()
         self.env = env
         self.raw_env = env.env
-        self.smoothing = float(np.clip(smoothing, 0.0, 1.0))
+        # Retain the legacy argument for config compatibility.
+        self.smoothing = 1.0
+        self.legacy_smoothing_argument = float(smoothing)
+        self.parameter_ramp_steps = max(0, int(parameter_ramp_steps))
         self.parameter_hold_steps = max(1, int(parameter_hold_steps))
-        self.n_joints = int(np.prod(env.action_space.shape))
-        if self.n_joints < 2:
-            raise ValueError("Eel CPG requires at least two actuated joints")
+        self.n_actuators = int(np.prod(env.action_space.shape))
+        if self.n_actuators < 2 or self.n_actuators % 2 != 0:
+            raise ValueError("Projected eel CPG requires yaw/roll actuator pairs")
+        self.n_pairs = self.n_actuators // 2
+        ctrl_range = np.asarray(self.raw_env.mujoco_model.actuator_ctrlrange, dtype=np.float32)
+        if ctrl_range.shape != (self.n_actuators, 2):
+            raise ValueError("Unexpected projected eel actuator control ranges")
+        self.ctrl_low = ctrl_range[:, 0]
+        self.ctrl_high = ctrl_range[:, 1]
 
         self.action_space = spaces.Box(-1.0, 1.0, shape=(4,), dtype=np.float32)
         base_obs_dim = int(np.prod(env.observation_space.shape))
-        # Add sin/cos oscillator phase and the four current normalized parameters.
+        # Append phase and the four active CPG parameters.
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -145,12 +181,22 @@ class EelCPGWrapper(gym.Env):
         self.control_dt = mujoco_dt * int(self.raw_env.per_frame_steps)
         self.phase = 0.0
         self.current_normalized = self._parameters_to_normalized(self.DEFAULT_PARAMETERS)
-        self.last_joint_action = np.zeros(self.n_joints, dtype=np.float32)
+        self.last_joint_action = np.zeros(self.n_actuators, dtype=np.float32)
         self.last_target_normalized = self.current_normalized.copy()
         self.last_executed_steps = 0
         self.render_hook: Optional[Callable[[float], bool]] = None
         self.render_substep_every = 1
         self.render_stop_requested = False
+
+    @property
+    def parameter_decision_steps(self) -> int:
+        return self.parameter_ramp_steps + self.parameter_hold_steps
+
+    def parameter_stage_text(self) -> str:
+        if self.last_executed_steps <= self.parameter_ramp_steps and self.parameter_ramp_steps > 0:
+            return f"RAMP {self.last_executed_steps}/{self.parameter_ramp_steps}"
+        hold_step = max(0, self.last_executed_steps - self.parameter_ramp_steps)
+        return f"HOLD {hold_step}/{self.parameter_hold_steps}"
 
     def set_render_hook(
         self,
@@ -175,16 +221,27 @@ class EelCPGWrapper(gym.Env):
         return self._normalized_to_parameters(self.current_normalized)
 
     def _joint_wave(self, parameters: np.ndarray) -> np.ndarray:
-        amplitude, _frequency_hz, spatial_phase, head_bias = parameters
-        s = np.linspace(0.0, 1.0, self.n_joints, dtype=np.float32)
-        # Small motion near the head and a progressively larger tail envelope.
-        envelope = 0.10 + 0.90 * s
-        wave = amplitude * envelope * np.sin(self.phase + spatial_phase * s)
-        # Bias is strongest near the head, enabling steering without bending the tail uniformly.
-        wave += head_bias * (1.0 - s)
-        return np.clip(wave, -1.0, 1.0).astype(np.float32)
+        # Generate yaw waves while holding roll at zero.
+        amplitude, _omega, k_wave, head_bias = parameters
+        s = np.linspace(0.0, 1.0, self.n_pairs, dtype=np.float32)
+        envelope = self.HEAD_AMPLITUDE + (1.0 - self.HEAD_AMPLITUDE) * s
+        yaw_normalized = amplitude * envelope * np.sin(
+            self.phase + k_wave * self.K_MAX * np.pi * s
+        )
+        yaw_normalized += head_bias * (1.0 - s)
+        yaw_normalized = np.clip(yaw_normalized, -1.0, 1.0)
+        roll_normalized = np.zeros(self.n_pairs, dtype=np.float32)
+
+        normalized = np.empty(self.n_actuators, dtype=np.float32)
+        normalized[0::2] = yaw_normalized
+        normalized[1::2] = roll_normalized
+        # Map normalized commands to physical actuator ranges.
+        return (
+            self.ctrl_low + 0.5 * (normalized + 1.0) * (self.ctrl_high - self.ctrl_low)
+        ).astype(np.float32)
 
     def _augment_observation(self, observation: np.ndarray) -> np.ndarray:
+        # Make oscillator state observable to SAC.
         cpg_state = np.concatenate(
             [
                 np.array([np.sin(self.phase), np.cos(self.phase)], dtype=np.float32),
@@ -200,7 +257,9 @@ class EelCPGWrapper(gym.Env):
                 name: float(value) for name, value in zip(self.PARAMETER_NAMES, parameters)
             },
             "cpg_joint_action": self.last_joint_action.copy(),
+            "cpg_parameter_ramp_steps": self.parameter_ramp_steps,
             "cpg_parameter_hold_steps": self.parameter_hold_steps,
+            "cpg_parameter_decision_steps": self.parameter_decision_steps,
             "cpg_executed_steps": self.last_executed_steps,
         }
 
@@ -208,10 +267,22 @@ class EelCPGWrapper(gym.Env):
         """Return coupled LBM solid centers in world x/y coordinates."""
         try:
             points = self.raw_env.solver.flows[0].solid_position.numpy()
-            points = np.asarray(points[: self.n_joints + 1, :2], dtype=np.float32)
+            points = np.asarray(points[: self.raw_env.solid_num, :2], dtype=np.float32)
             if points.shape[0] < 2 or not np.all(np.isfinite(points)):
                 return None
             return points
+        except Exception:
+            return None
+
+    def actual_body_polygons(self) -> Optional[list[np.ndarray]]:
+        """Return the exact transformed LBM polygons used for coupling."""
+        try:
+            flow = self.raw_env.solver.flows[0]
+            vertices = np.asarray(flow.solid_line_transformed.numpy(), dtype=np.float32)
+            counts = np.asarray(flow.solid_line_num.numpy(), dtype=np.int32)
+            polygons = [vertices[i, : int(count)].copy() for i, count in enumerate(counts)]
+            polygons = [p for p in polygons if len(p) >= 3 and np.all(np.isfinite(p))]
+            return polygons or None
         except Exception:
             return None
 
@@ -233,9 +304,7 @@ class EelCPGWrapper(gym.Env):
     def step(self, action: np.ndarray):
         target = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
         self.last_target_normalized = target.copy()
-        self.current_normalized += self.smoothing * (target - self.current_normalized)
-        parameters = self._physical_parameters()
-        frequency_hz = float(parameters[1])
+        ramp_start = self.current_normalized.copy()
         total_reward = 0.0
         terminated = False
         truncated = False
@@ -243,16 +312,24 @@ class EelCPGWrapper(gym.Env):
         observation = None
         self.last_executed_steps = 0
 
-        # One SAC transition represents one parameter decision. Keep those
-        # parameters fixed while the oscillator advances for several low-level
-        # control steps, then return the accumulated reward to SAC.
-        for _ in range(self.parameter_hold_steps):
+        # One SAC transition contains a parameter ramp and hold.
+        for step_index in range(self.parameter_decision_steps):
+            if step_index < self.parameter_ramp_steps:
+                fraction = float(step_index + 1) / float(self.parameter_ramp_steps)
+                self.current_normalized = (
+                    ramp_start + fraction * (target - ramp_start)
+                ).astype(np.float32)
+            else:
+                self.current_normalized = target.copy()
+
+            parameters = self._physical_parameters()
+            omega = float(parameters[1])
             self.last_joint_action = self._joint_wave(parameters)
             observation, reward, terminated, truncated, info = self.env.step(self.last_joint_action)
             total_reward += float(reward)
             self.last_executed_steps += 1
             self.phase = float(
-                (self.phase - 2.0 * np.pi * frequency_hz * self.control_dt)
+                (self.phase + omega * self.OMEGA_MAX * self.WAVE_DT)
                 % (2.0 * np.pi)
             )
             if (
@@ -279,15 +356,101 @@ class EelCPGWrapper(gym.Env):
             "default_parameters": self.DEFAULT_PARAMETERS.tolist(),
             "smoothing": self.smoothing,
             "control_dt": self.control_dt,
+            "parameter_ramp_steps": self.parameter_ramp_steps,
             "parameter_hold_steps": self.parameter_hold_steps,
-            "parameter_decision_dt": self.control_dt * self.parameter_hold_steps,
-            "joint_count": self.n_joints,
-            "temporal_phase_direction": -1.0,
-            "tail_envelope": [0.10, 1.0],
+            "parameter_decision_steps": self.parameter_decision_steps,
+            "parameter_decision_dt": self.control_dt * self.parameter_decision_steps,
+            "actuator_count": self.n_actuators,
+            "yaw_roll_pairs": self.n_pairs,
+            "omega_max": self.OMEGA_MAX,
+            "k_max": self.K_MAX,
+            "wave_dt": self.WAVE_DT,
+            "tail_envelope": [self.HEAD_AMPLITUDE, 1.0],
+            "fixed_roll": 0.0,
         }
 
     def close(self):
         self.env.close()
+
+
+def load_cpg_warmup_seed(
+    cpg_env: EelCPGWrapper,
+    config_path: Optional[Path],
+) -> Tuple[np.ndarray, np.ndarray, Optional[str]]:
+    """Load physical seed parameters from a scan JSON and normalize for SAC."""
+    parameters = cpg_env.DEFAULT_PARAMETERS.copy()
+    source = None
+    if config_path is not None and config_path.exists():
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+        scan_is_valid = payload.get("status") == "ok" and payload.get("best") is not None
+        best = payload.get("best", {}) if scan_is_valid else {}
+        if not scan_is_valid:
+            print(
+                f"[CPG warmup] Ignoring invalid/legacy scan JSON: {config_path}. "
+                "Run the steady-COM scanner before training."
+            )
+        elif all(key in best for key in ("A", "omega", "k_wave")):
+            parameters = np.array(
+                [
+                    best["A"],
+                    best["omega"],
+                    best["k_wave"],
+                    0.0,
+                ],
+                dtype=np.float32,
+            )
+            source = str(config_path)
+        elif scan_is_valid:
+            print(
+                f"[CPG warmup] Ignoring scan with legacy 5-motor parameters: {config_path}. "
+                "Projected eel scans must provide A, omega and k_wave."
+            )
+    parameters = np.clip(parameters, cpg_env.PARAMETER_LOW, cpg_env.PARAMETER_HIGH)
+    parameters[3] = 0.0
+    return cpg_env._parameters_to_normalized(parameters), parameters, source
+
+
+class CPGWarmupSAC(SAC):
+    """SAC with OU-correlated CPG actions only during replay-buffer warm-up."""
+
+    def __init__(
+        self,
+        *args,
+        warmup_mean: np.ndarray,
+        ou_theta: float = 0.15,
+        ou_sigma: np.ndarray,
+        ou_dt: float = 1.0,
+        ou_seed: Optional[int] = None,
+        **kwargs,
+    ):
+        self.cpg_warmup_mean = np.asarray(warmup_mean, dtype=np.float32).reshape(-1)
+        self.cpg_ou_theta = float(ou_theta)
+        self.cpg_ou_sigma = np.asarray(ou_sigma, dtype=np.float32).reshape(-1)
+        if self.cpg_ou_sigma.shape != self.cpg_warmup_mean.shape:
+            raise ValueError("OU sigma must have one value per CPG action dimension")
+        self.cpg_ou_dt = float(ou_dt)
+        self.cpg_ou_rng = np.random.default_rng(ou_seed)
+        self.cpg_ou_state: Optional[np.ndarray] = None
+        super().__init__(*args, **kwargs)
+
+    def _sample_action(self, learning_starts: int, action_noise=None, n_envs: int = 1):
+        if self.num_timesteps < learning_starts:
+            if self.cpg_ou_state is None or self.cpg_ou_state.shape[0] != n_envs:
+                self.cpg_ou_state = np.repeat(
+                    self.cpg_warmup_mean[None, :], n_envs, axis=0
+                ).astype(np.float32)
+            noise = self.cpg_ou_rng.normal(size=self.cpg_ou_state.shape).astype(np.float32)
+            mean = self.cpg_warmup_mean[None, :]
+            sigma = self.cpg_ou_sigma[None, :]
+            self.cpg_ou_state += (
+                self.cpg_ou_theta * (mean - self.cpg_ou_state) * self.cpg_ou_dt
+                + sigma * math.sqrt(self.cpg_ou_dt) * noise
+            )
+            self.cpg_ou_state = np.clip(self.cpg_ou_state, -1.0, 1.0)
+            scaled_action = self.cpg_ou_state.copy()
+            action = self.policy.unscale_action(scaled_action)
+            return action, scaled_action
+        return super()._sample_action(learning_starts, action_noise, n_envs)
 
 
 _VORTICITY_RGB_LUT: Optional[np.ndarray] = None
@@ -330,6 +493,36 @@ def vorticity_frame(raw_env: FishLBMEnv, height: int = 600, vorticity_vmax: floa
         width = int(round(w * height / h))
         frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA if h > height else cv2.INTER_CUBIC)
     return frame
+
+
+def draw_target_marker(frame: np.ndarray, raw_env: FishLBMEnv) -> None:
+    """Overlay the current eel goal in the same coordinates as the LBM image."""
+    targets = getattr(raw_env, "target_positions_lbm", None)
+    if targets is None or len(targets) == 0:
+        return
+    target = np.asarray(targets[0], dtype=np.float32)
+    if target.shape != (2,) or not np.all(np.isfinite(target)):
+        return
+
+    h, w = frame.shape[:2]
+    px = int(round(float(target[0]) / float(raw_env.nx) * (w - 1)))
+    py = int(round((1.0 - float(target[1]) / float(raw_env.ny)) * (h - 1)))
+    radius_lbm = float(getattr(raw_env, "target_radius_fraction", 0.02)) * float(raw_env.ny)
+    radius_px = max(
+        7,
+        int(round(radius_lbm * min(w / float(raw_env.nx), h / float(raw_env.ny)))),
+    )
+    px = int(np.clip(px, 0, w - 1))
+    py = int(np.clip(py, 0, h - 1))
+    green = (85, 255, 115)
+    dark = (15, 45, 22)
+    cv2.circle(frame, (px, py), radius_px + 2, dark, 3, cv2.LINE_AA)
+    cv2.circle(frame, (px, py), radius_px, green, 2, cv2.LINE_AA)
+    cv2.circle(frame, (px, py), 3, green, -1, cv2.LINE_AA)
+    cv2.line(frame, (px - radius_px, py), (px + radius_px, py), green, 1, cv2.LINE_AA)
+    cv2.line(frame, (px, py - radius_px), (px, py + radius_px), green, 1, cv2.LINE_AA)
+    label_y = max(18, py - radius_px - 7)
+    _draw_text(frame, "TARGET", (max(3, px - 27), label_y), 0.38, green)
 
 
 
@@ -549,25 +742,36 @@ def _draw_cpg_wave_chart(
         grid_x = x + int(fraction * w)
         cv2.line(panel, (grid_x, y + 1), (grid_x, y + h - 1), (58, 65, 80), 1)
 
-    amplitude, frequency_hz, spatial_phase, head_bias = parameters
+    amplitude, omega, k_wave, head_bias = parameters
     cycle = np.linspace(0.0, 1.0, max(100, w - 4), dtype=np.float32)
     xs = np.linspace(x + 2, x + w - 2, cycle.size).astype(np.int32)
-    body_s = np.linspace(0.0, 1.0, cpg_env.n_joints, dtype=np.float32)
+    body_s = np.linspace(0.0, 1.0, cpg_env.n_pairs, dtype=np.float32)
+    temporal_direction = -1.0 if float(omega) < 0.0 else 1.0
     for joint_idx, s in enumerate(body_s):
-        envelope = 0.10 + 0.90 * s
-        values = amplitude * envelope * np.sin(-2.0 * np.pi * cycle + spatial_phase * s)
+        envelope = cpg_env.HEAD_AMPLITUDE + (1.0 - cpg_env.HEAD_AMPLITUDE) * s
+        values = amplitude * envelope * np.sin(
+            temporal_direction * 2.0 * np.pi * cycle
+            + k_wave * cpg_env.K_MAX * np.pi * s
+        )
         values += head_bias * (1.0 - s)
         values = np.clip(values, -1.0, 1.0)
         ys = (mid_y - values * (h * 0.43)).astype(np.int32)
         points = np.column_stack([xs, ys]).reshape((-1, 1, 2))
         color = _CPG_JOINT_COLORS[joint_idx % len(_CPG_JOINT_COLORS)]
-        cv2.polylines(panel, [points], False, color, 1 if joint_idx < cpg_env.n_joints - 1 else 2, cv2.LINE_AA)
+        cv2.polylines(panel, [points], False, color, 1 if joint_idx < cpg_env.n_pairs - 1 else 2, cv2.LINE_AA)
 
-    phase_u = float((-cpg_env.phase) % (2.0 * np.pi) / (2.0 * np.pi))
+    phase_u = float(cpg_env.phase % (2.0 * np.pi) / (2.0 * np.pi))
     phase_x = x + int(phase_u * w)
     cv2.line(panel, (phase_x, y), (phase_x, y + h), (250, 250, 255), 1, cv2.LINE_AA)
     cv2.circle(panel, (phase_x, y + 7), 3, (250, 250, 255), -1, cv2.LINE_AA)
-    period = 1.0 / max(float(frequency_hz), 1.0e-6)
+    physical_frequency = (
+        abs(float(omega))
+        * cpg_env.OMEGA_MAX
+        / (2.0 * np.pi)
+        * cpg_env.WAVE_DT
+        / cpg_env.control_dt
+    )
+    period = 1.0 / max(physical_frequency, 1.0e-6)
     _draw_text(panel, "now", (min(phase_x + 4, x + w - 28), y + 13), 0.32, (235, 238, 245))
     _draw_text(panel, "0", (x + 3, y + h - 5), 0.32, (135, 145, 165))
     _draw_text(panel, f"one cycle  T={period:.2f}s", (x + w - 120, y + h - 5), 0.32, (155, 165, 184))
@@ -582,36 +786,35 @@ def _draw_actual_body_pose(
     x, y, w, h = rect
     cv2.rectangle(panel, (x, y), (x + w, y + h), (48, 55, 70), -1)
     cv2.rectangle(panel, (x, y), (x + w, y + h), (75, 84, 103), 1, cv2.LINE_AA)
+    polygons = cpg_env.actual_body_polygons()
     points = cpg_env.actual_body_points()
-    if points is None:
+    if polygons is None or points is None:
         _draw_text(panel, "body pose unavailable", (x + 10, y + h // 2), 0.40, (155, 165, 184))
         return
 
-    center = np.mean(points, axis=0)
-    centered = points - center
-    span = np.ptp(points, axis=0)
+    all_vertices = np.vstack(polygons)
+    center = np.mean(all_vertices, axis=0)
+    span = np.ptp(all_vertices, axis=0)
     drawable_w = max(1.0, float(w - 52))
     drawable_h = max(1.0, float(h - 32))
     scale_x = drawable_w / max(float(span[0]), 1.0e-5)
     scale_y = drawable_h / max(float(span[1]), 1.0e-5)
     scale = min(scale_x, scale_y)
-    screen_x = x + w * 0.5 + centered[:, 0] * scale
-    # LBM render flips the image vertically, so larger world y is higher on screen.
-    screen_y = y + h * 0.5 - centered[:, 1] * scale
-    screen_points = np.column_stack([screen_x, screen_y]).astype(np.int32)
+    def to_screen(vertices: np.ndarray) -> np.ndarray:
+        centered = vertices - center
+        screen_x = x + w * 0.5 + centered[:, 0] * scale
+        # LBM render flips the image vertically, so larger world y is higher on screen.
+        screen_y = y + h * 0.5 - centered[:, 1] * scale
+        return np.column_stack([screen_x, screen_y]).astype(np.int32)
 
-    cv2.polylines(
-        panel,
-        [screen_points.reshape((-1, 1, 2))],
-        False,
-        (205, 215, 230),
-        5,
-        cv2.LINE_AA,
-    )
-    for i, (px, py) in enumerate(screen_points):
-        color = (235, 240, 248) if i == 0 else _CPG_JOINT_COLORS[(i - 1) % len(_CPG_JOINT_COLORS)]
-        radius = 6 if i == 0 else 5
-        cv2.circle(panel, (int(px), int(py)), radius, color, -1, cv2.LINE_AA)
+    for i, polygon in enumerate(polygons):
+        screen_polygon = to_screen(polygon).reshape((-1, 1, 2))
+        color = (225, 235, 245) if i == 0 else _CPG_JOINT_COLORS[(i - 1) % len(_CPG_JOINT_COLORS)]
+        cv2.fillPoly(panel, [screen_polygon], color, cv2.LINE_AA)
+        cv2.polylines(panel, [screen_polygon], True, (35, 42, 55), 1, cv2.LINE_AA)
+
+    screen_points = to_screen(points)
+    cv2.polylines(panel, [screen_points.reshape((-1, 1, 2))], False, (35, 42, 55), 1, cv2.LINE_AA)
 
     _draw_text(panel, "HEAD", (x + 5, y + 13), 0.32, (210, 220, 235))
     label = "TAIL"
@@ -632,18 +835,18 @@ def build_cpg_action_panel(
     cv2.rectangle(panel, (0, 0), (panel_width - 1, height - 1), (55, 60, 74), 1, cv2.LINE_AA)
 
     target_normalized = np.asarray(target_action, dtype=np.float32).reshape(-1)
-    if target_normalized.size != 4:
+    if target_normalized.size != len(cpg_env.PARAMETER_NAMES):
         target_normalized = cpg_env.current_normalized.copy()
     actual_parameters = cpg_env._physical_parameters()
 
     _draw_text(panel, "CPG policy", (16, 28), 0.70, (250, 250, 255))
     _draw_text(panel, "cyan: executed   pink: SAC target", (16, 48), 0.36, (160, 170, 190))
 
-    labels = ("Amplitude", "Frequency", "Body phase lag", "Steering bias")
+    labels = ("A", "omega", "k_wave", "head_bias")
     value_texts = (
         f"{actual_parameters[0]:.3f}",
-        f"{actual_parameters[1]:.2f} Hz",
-        f"{actual_parameters[2] / np.pi:.2f} pi",
+        f"{actual_parameters[1]:+.3f}",
+        f"{actual_parameters[2]:.3f}",
         f"{actual_parameters[3]:+.3f}",
     )
     row_y = 58
@@ -658,9 +861,9 @@ def build_cpg_action_panel(
             panel_width,
         )
 
-    wave_title_y = row_y + 4 * 41 + 15
-    _draw_text(panel, "CPG motor commands / cycle", (16, wave_title_y), 0.48, (235, 240, 248))
-    hold_text = f"hold {cpg_env.parameter_hold_steps} x {cpg_env.control_dt:.2f}s"
+    wave_title_y = row_y + len(labels) * 41 + 15
+    _draw_text(panel, "Yaw commands / physical cycle", (16, wave_title_y), 0.48, (235, 240, 248))
+    hold_text = cpg_env.parameter_stage_text()
     hold_w = cv2.getTextSize(hold_text, cv2.FONT_HERSHEY_SIMPLEX, 0.34, 1)[0][0]
     _draw_text(panel, hold_text, (panel_width - hold_w - 16, wave_title_y), 0.34, (155, 165, 184))
     wave_y = wave_title_y + 10
@@ -766,13 +969,13 @@ class RealtimeLBMCallback(BaseCallback):
             self.episode_return = 0.0
             self.episode_length = 0
 
-        if self.n_calls % self.every != 0:
-            return True
-
         # CPG mode renders from inside the held low-level steps. Rendering again
         # here would duplicate the final frame and reintroduce a long pause.
         if self.cpg_env is not None and self.cpg_env.render_hook is not None:
             return not self.stop_requested
+
+        if self.n_calls % self.every != 0:
+            return True
 
         return self._render_current_frame()
 
@@ -780,11 +983,11 @@ class RealtimeLBMCallback(BaseCallback):
         """Render one current coupled state; shared by callback and CPG substeps."""
 
         lbm_frame = vorticity_frame(self.raw_env, self.height, self.vorticity_vmax)
+        draw_target_marker(lbm_frame, self.raw_env)
 
         if self.cpg_env is not None:
             text = (
-                f"SAC step={self.num_timesteps}  hold="
-                f"{self.cpg_env.last_executed_steps}/{self.cpg_env.parameter_hold_steps}  "
+                f"SAC step={self.num_timesteps}  {self.cpg_env.parameter_stage_text()}  "
                 f"reward={self.last_reward:+.3f}"
             )
         else:
@@ -837,9 +1040,12 @@ def main():
         "--control-mode",
         choices=["direct", "cpg"],
         default="direct",
-        help="Direct joint actions, or four learned CPG parameters (eel only)",
+        help="Direct actuator actions, or four planar eel CPG parameters (eel only)",
     )
     parser.add_argument("--total-steps", type=int, default=100_000)
+    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--checkpoint-every", type=int, default=1000, help="Save an intermediate policy zip every N SAC decisions; 0 disables checkpoints")
+    parser.add_argument("--learning-starts", type=int, default=250, help="Replay warm-up SAC decisions before gradient updates")
 
     parser.add_argument("--render", action="store_true", help="Show realtime LBM vorticity and SAC panel during training")
 
@@ -856,14 +1062,36 @@ def main():
     parser.add_argument("--warmup-steps", type=int, default=50, help="Zero-action LBM warmup steps after each reset")
     parser.add_argument("--viscosity", type=float, default=0.05, help="LBM kinematic viscosity; larger value lowers Reynolds number")
     parser.add_argument("--action-scale", type=float, default=0.8, help="Scale SAC actions before applying them to MuJoCo actuators")
-    parser.add_argument("--per-frame-steps", type=int, default=10, help="Coupled physics substeps per SAC step; use 4 for eel CPG")
-    parser.add_argument("--episode-steps", type=int, default=500)
-    parser.add_argument("--cpg-smoothing", type=float, default=0.25, help="EMA rate applied when switching CPG parameter targets")
-    parser.add_argument("--cpg-hold-steps", type=int, default=20, help="Low-level control steps to hold each SAC CPG parameter set")
+    parser.add_argument("--per-frame-steps", type=int, default=None, help="Coupled physics substeps per low-level action; defaults to 8 for projected eel CPG and 10 otherwise")
+    parser.add_argument("--episode-steps", type=int, default=100, help="Episode length in SAC decisions (or raw actions in direct mode)")
+    parser.add_argument("--target-mode", choices=["random", "ahead"], default="random", help="Random front-sector goals for a reusable policy, or a fixed straight-ahead goal")
+    parser.add_argument("--target-distance-range", type=float, nargs=2, default=[0.12, 0.25], metavar=("MIN", "MAX"), help="Random target distance range as fractions of LBM ny")
+    parser.add_argument("--target-angle-range-deg", type=float, nargs=2, default=[-70.0, 70.0], metavar=("MIN", "MAX"), help="Random target bearing range relative to the eel heading")
+    parser.add_argument("--target-radius-fraction", type=float, default=0.02, help="Success radius as a fraction of LBM ny")
+    parser.add_argument("--cpg-smoothing", type=float, default=1.0, help="Deprecated compatibility option; explicit ramp now reaches the SAC target")
+    parser.add_argument("--cpg-ramp-steps", type=int, default=10, help="Low-level steps used to linearly reach each new SAC CPG target")
+    parser.add_argument("--cpg-hold-steps", type=int, default=30, help="Low-level steps to hold the reached CPG target")
+    parser.add_argument("--warmup-exploration", choices=["ou", "uniform"], default="ou", help="CPG warm-up exploration; direct mode remains uniform")
+    parser.add_argument("--cpg-seed-config", type=Path, default=None, help="Optional projected-eel scan JSON providing the OU warm-up mean")
+    parser.add_argument("--ou-theta", type=float, default=0.15)
+    parser.add_argument("--ou-sigma", type=float, nargs=4, default=[0.12, 0.10, 0.12, 0.08], metavar=("A", "OMEGA", "K_WAVE", "BIAS"), help="OU sigma in normalized A/omega/k_wave/head_bias coordinates")
+    parser.add_argument("--ou-dt", type=float, default=1.0)
     args = parser.parse_args()
 
     if args.control_mode == "cpg" and args.animal != "eel":
         parser.error("--control-mode cpg is currently implemented for --animal eel")
+    if not (
+        0.0 < args.target_distance_range[0] <= args.target_distance_range[1]
+    ):
+        parser.error("--target-distance-range must satisfy 0 < MIN <= MAX")
+    if not (
+        -90.0 <= args.target_angle_range_deg[0]
+        <= args.target_angle_range_deg[1]
+        <= 90.0
+    ):
+        parser.error("--target-angle-range-deg must stay in the forward half-plane [-90, 90]")
+    if not (0.0 < args.target_radius_fraction < 0.5):
+        parser.error("--target-radius-fraction must be between 0 and 0.5")
 
 
 
@@ -871,47 +1099,120 @@ def main():
     outdir = Path("outputs/sac_minimal")
     outdir.mkdir(parents=True, exist_ok=True)
 
-    env_class = Eel2DLBMEnv if args.animal == "eel" else FishLBMEnv
-    raw_env = env_class(
-        nworld=1,
-        nx=320,
-        ny=480,
+    per_frame_steps = args.per_frame_steps
+    if per_frame_steps is None:
+        per_frame_steps = 8 if args.animal == "eel" and args.control_mode == "cpg" else 10
+    raw_episode_steps = int(args.episode_steps)
+    if args.control_mode == "cpg":
+        # Express each episode length in low-level control steps.
+        raw_episode_steps *= int(args.cpg_ramp_steps + args.cpg_hold_steps)
 
-        lbm_scale=0.2,
-        per_frame_steps=args.per_frame_steps,
-        max_episode_steps=args.episode_steps,
-        include_image=False,
-        render_mode=None,
-    )
-    raw_env.action_scale = float(args.action_scale)
+    if args.animal == "eel" and args.control_mode == "cpg":
+        # Reuse the projected geometry from the realtime preset.
+        project_root = Path(__file__).resolve().parent
+        projected_config_path = project_root / "configs" / "realtime_2d" / "eel2d.json"
+        projected_config = json.loads(projected_config_path.read_text(encoding="utf-8"))
+        env_config = projected_config["env"]
+        lbm_config = projected_config["lbm"]
+        solid_config = [dict(item) for item in env_config["solid_config"]]
+        raw_env = Eel2DLBMEnv(
+            xml_path=str(project_root / env_config["xml_path"]),
+            solid_config=solid_config,
+            nworld=1,
+            nx=int(lbm_config["nx"]),
+            ny=int(lbm_config["ny"]),
+            lbm_scale=float(lbm_config["lbm_scale"]),
+            per_frame_steps=int(per_frame_steps),
+            max_episode_steps=raw_episode_steps,
+            include_image=False,
+            render_mode=None,
+        )
+        # The CPG wrapper applies each actuator's physical range.
+        raw_env.action_scale = 1.0
+        print(
+            f"[eel CPG] projected model={env_config['xml_path']} solids={raw_env.solid_num} "
+            f"actuators={raw_env.model.nu} grid={raw_env.nx}x{raw_env.ny} "
+            f"per_frame_steps={per_frame_steps}"
+        )
+    else:
+        env_class = Eel2DLBMEnv if args.animal == "eel" else FishLBMEnv
+        raw_env = env_class(
+            nworld=1,
+            nx=320,
+            ny=480,
+            lbm_scale=0.2,
+            per_frame_steps=int(per_frame_steps),
+            max_episode_steps=raw_episode_steps,
+            include_image=False,
+            render_mode=None,
+        )
+        raw_env.action_scale = float(args.action_scale)
+
+    if args.animal == "eel":
+        # Configure the goal distribution before the first reset.
+        raw_env.randomize_target = args.target_mode == "random"
+        raw_env.target_distance_range_fraction = tuple(args.target_distance_range)
+        raw_env.target_angle_range_deg = tuple(args.target_angle_range_deg)
+        raw_env.target_radius_fraction = float(args.target_radius_fraction)
 
     set_lbm_viscosity(raw_env, args.viscosity)
-    base_env = SingleEnvWrapper(raw_env, warmup_steps=args.warmup_steps, viscosity=args.viscosity)
+    base_env = SingleEnvWrapper(
+        raw_env,
+        warmup_steps=args.warmup_steps,
+        viscosity=args.viscosity,
+        latest_observation_only=args.control_mode == "cpg",
+    )
     cpg_env = None
     if args.control_mode == "cpg":
         cpg_env = EelCPGWrapper(
             base_env,
             smoothing=args.cpg_smoothing,
+            parameter_ramp_steps=args.cpg_ramp_steps,
             parameter_hold_steps=args.cpg_hold_steps,
         )
         train_env = cpg_env
     else:
         train_env = base_env
 
-    monitor_suffix = "_cpg" if args.control_mode == "cpg" else ""
+    monitor_suffix = "_goal_cpg" if args.control_mode == "cpg" else ""
+    # Store goal metrics with each completed episode.
     env = Monitor(
         train_env,
         filename=str(outdir / f"{args.animal}2d{monitor_suffix}.monitor.csv"),
+        info_keywords=("is_success", "target_distance_lbm") if cpg_env is not None else (),
     )
+    model_name = f"sac_{args.animal}2d{monitor_suffix}"
 
 
 
-    model = SAC(
+    model_class = SAC
+    model_extra_kwargs: Dict[str, Any] = {}
+    warmup_seed_parameters = None
+    warmup_seed_source = None
+    if cpg_env is not None and args.warmup_exploration == "ou":
+        warmup_mean, warmup_seed_parameters, warmup_seed_source = load_cpg_warmup_seed(
+            cpg_env, args.cpg_seed_config
+        )
+        model_class = CPGWarmupSAC
+        model_extra_kwargs = {
+            "warmup_mean": warmup_mean,
+            "ou_theta": args.ou_theta,
+            "ou_sigma": np.array(args.ou_sigma, dtype=np.float32),
+            "ou_dt": args.ou_dt,
+            "ou_seed": args.seed,
+        }
+        source_text = warmup_seed_source or "built-in default (scan JSON not found)"
+        print(
+            f"[CPG warmup] OU mean source: {source_text}; "
+            f"physical seed={warmup_seed_parameters.tolist()}"
+        )
+
+    model = model_class(
         "MlpPolicy",
         env,
         learning_rate=3e-4,
         buffer_size=100_000,
-        learning_starts=1_000,
+        learning_starts=args.learning_starts,
         batch_size=256,
         gamma=0.99,
         tau=0.005,
@@ -920,9 +1221,11 @@ def main():
         verbose=1,
         tensorboard_log=str(outdir / "tb"),
         device="cuda",
+        seed=args.seed,
+        **model_extra_kwargs,
     )
 
-    callback = (
+    realtime_callback = (
         RealtimeLBMCallback(
             raw_env,
             every=args.render_every,
@@ -936,17 +1239,55 @@ def main():
         if args.render
         else None
     )
-    if callback is not None and cpg_env is not None:
+    if realtime_callback is not None and cpg_env is not None:
         cpg_env.set_render_hook(
-            callback.render_cpg_substep,
+            realtime_callback.render_cpg_substep,
             every=args.render_substep_every,
         )
 
-    model_name = f"sac_{args.animal}2d{monitor_suffix}"
+    # Keep checkpoints independent of optional rendering.
+    callbacks: list[BaseCallback] = []
+    if args.checkpoint_every > 0:
+        checkpoint_dir = outdir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        callbacks.append(
+            CheckpointCallback(
+                save_freq=max(1, int(args.checkpoint_every)),
+                save_path=str(checkpoint_dir),
+                name_prefix=model_name,
+            )
+        )
+    if realtime_callback is not None:
+        callbacks.append(realtime_callback)
+    learn_callback: Optional[BaseCallback]
+    if len(callbacks) == 0:
+        learn_callback = None
+    elif len(callbacks) == 1:
+        learn_callback = callbacks[0]
+    else:
+        learn_callback = CallbackList(callbacks)
+
     if cpg_env is not None:
         config_path = outdir / f"{model_name}_config.json"
-        config_path.write_text(json.dumps(cpg_env.config_dict(), indent=2), encoding="utf-8")
-    model.learn(total_timesteps=args.total_steps, log_interval=10, callback=callback)
+        saved_config = cpg_env.config_dict()
+        saved_config["warmup_exploration"] = args.warmup_exploration
+        saved_config["learning_starts"] = args.learning_starts
+        saved_config["ou_theta"] = args.ou_theta
+        saved_config["ou_sigma"] = list(args.ou_sigma)
+        saved_config["ou_dt"] = args.ou_dt
+        saved_config["warmup_seed_parameters"] = (
+            warmup_seed_parameters.tolist() if warmup_seed_parameters is not None else None
+        )
+        saved_config["warmup_seed_source"] = warmup_seed_source
+        saved_config["target_mode"] = args.target_mode
+        saved_config["target_distance_range_fraction"] = list(args.target_distance_range)
+        saved_config["target_angle_range_deg"] = list(args.target_angle_range_deg)
+        saved_config["target_radius_fraction"] = args.target_radius_fraction
+        saved_config["policy_observation_dim"] = int(np.prod(cpg_env.observation_space.shape))
+        saved_config["seed"] = args.seed
+        saved_config["checkpoint_every"] = args.checkpoint_every
+        config_path.write_text(json.dumps(saved_config, indent=2), encoding="utf-8")
+    model.learn(total_timesteps=args.total_steps, log_interval=10, callback=learn_callback)
     model.save(str(outdir / model_name))
     env.close()
     print(f"Saved: {outdir / (model_name + '.zip')}")

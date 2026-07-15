@@ -2,14 +2,14 @@
     <!--
     3D Fish/Snake Robot for LBM-MuJoCo Coupled Simulation
     
-    结构说明:
-    - head: 头部 (根body, freejoint提供6DOF自由度)
-    - body: 身体中段 (hinge关节绕Z轴旋转)
-    - tail: 尾部 (hinge关节绕Z轴旋转)
+    Structure:
+    - head: root body with a free joint and 6 DOF
+    - body: middle segment with a hinge around z
+    - tail: tail segment with a hinge around z
     
-    控制:
-    - joint1: 头-身关节, 扭矩范围 [-1, 1]
-    - joint2: 身-尾关节, 扭矩范围 [-1, 1]
+    Control:
+    - joint1: head-body joint, torque range [-1, 1]
+    - joint2: body-tail joint, torque range [-1, 1]
     -->
     
     <compiler angle="degree" inertiafromgeom="true"/>
@@ -28,50 +28,50 @@
     </asset>
     
     <worldbody>
-        <!-- 头部: 根body，使用freejoint获得6DOF自由度 -->
+        <!-- Root head with a free joint and 6 DOF. -->
         <body name="head" pos="0 0 0">
             <freejoint name="root_joint"/>
             
-        <!-- 头部几何体: 椭球形，流线型 -->
+        <!-- Streamlined ellipsoid head. -->
             <geom name="head_geom" type="ellipsoid"
                   size="0.084 0.126 0.063"
                   pos="0 0 0"
                   material="head_mat"
                   density="500"/>
             
-            <!-- 身体中段 - 3DOF独立hinge关节 -->
+            <!-- Mid-body with three independent hinge joints. -->
             <body name="body" pos="0 -0.147 0">
-                <!-- Pitch (X轴俯仰) -->
+                <!-- Pitch around x. -->
                 <joint name="joint1_pitch" type="hinge" axis="1 0 0" limited="true" range="-15 15"/>
-                <!-- Roll (Y轴翻滚) -->
+                <!-- Roll around y. -->
                 <joint name="joint1_roll" type="hinge" axis="0 1 0" limited="true" range="-10 10"/>
-                <!-- Yaw (Z轴摆尾，主推力) -->
+                <!-- Propulsive yaw around z. -->
                 <joint name="joint1_yaw" type="hinge" axis="0 0 1" limited="true" range="-60 60"/>
                 
-                <!-- 身体几何体: 椭球形 -->
+                <!-- Ellipsoid body geometry. -->
                 <geom name="body_geom" type="ellipsoid"
                       size="0.074 0.105 0.053"
                       pos="0 0 0"
                       material="body_mat"
                       density="500"/>
                 
-                <!-- 尾部 - 3DOF独立hinge关节 -->
+                <!-- Tail with three independent hinge joints. -->
                 <body name="tail" pos="0 -0.126 0">
-                    <!-- Pitch (X轴) -->
+                    <!-- Pitch around x. -->
                     <joint name="joint2_pitch" type="hinge" axis="1 0 0" limited="true" range="-15 15"/>
-                    <!-- Roll (Y轴) -->
+                    <!-- Roll around y. -->
                     <joint name="joint2_roll" type="hinge" axis="0 1 0" limited="true" range="-10 10"/>
-                    <!-- Yaw (Z轴，主摆尾) -->
+                    <!-- Main tail yaw around z. -->
                     <joint name="joint2_yaw" type="hinge" axis="0 0 1" limited="true" range="-60 60"/>
                     
-                    <!-- 尾柄: 细长连接段 -->
+                    <!-- Slender tail peduncle. -->
                     <geom name="tail_stem" type="capsule"
                           fromto="0 0 0 0 -0.084 0"
                           size="0.032"
                           material="tail_mat"
                           density="500"/>
                     
-                    <!-- 尾鳍: 垂直扁平椭球形，适合左右摆动推水 -->
+                    <!-- Flat vertical tail fin for lateral propulsion. -->
                     <geom name="tail_fin" type="ellipsoid"
                           size="0.017 0.053 0.084"
                           pos="0 -0.105 0"
@@ -83,11 +83,11 @@
     </worldbody>
     
     <actuator>
-        <!-- Joint1 (头-身) -->
+        <!-- Joint 1: head to body. -->
         <motor name="motor1_pitch" joint="joint1_pitch" gear="10" ctrlrange="-1 1"/>
         <motor name="motor1_roll" joint="joint1_roll" gear="10" ctrlrange="-1 1"/>
         <motor name="motor1_yaw" joint="joint1_yaw" gear="40" ctrlrange="-1 1"/>
-        <!-- Joint2 (身-尾) -->
+        <!-- Joint 2: body to tail. -->
         <motor name="motor2_pitch" joint="joint2_pitch" gear="10" ctrlrange="-1 1"/>
         <motor name="motor2_roll" joint="joint2_roll" gear="10" ctrlrange="-1 1"/>
         <motor name="motor2_yaw" joint="joint2_yaw" gear="40" ctrlrange="-1 1"/>

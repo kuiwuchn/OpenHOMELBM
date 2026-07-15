@@ -1,17 +1,17 @@
 <mujoco model="SerialFish3D">
     <!--
-    串联多关节机器鱼模型 (带俯仰控制)
-    参考图片中的设计：
-    - 刚性头部 (Rigid Head Shell): 包含MCU、电池等
-    - 多节身体 (Body Segments): 3节，由伺服电机驱动
-    - 刚性尾鳍 (Rigid Tail): 扇形尾鳍
+    Serial multi-joint robotic fish with pitch control.
+    Design:
+    - Rigid head shell containing electronics
+    - Three servo-driven body segments
+    - Rigid fan-shaped tail fin
     
-    总长度约 0.4m (适配LBM网格)
-    坐标系: X向右, Y向前(游动方向), Z向上
+    Total length is about 0.4 m for the LBM grid.
+    Coordinates: x right, y forward, z up.
     
-    关节配置 (6自由度控制):
-    - seg1_pitch: 头部俯仰，控制上浮/下潜
-    - seg1_yaw ~ tail_yaw: 4个偏航关节，控制左右摆动
+    Joint configuration:
+    - seg1_pitch controls ascent and descent.
+    - seg1_yaw through tail_yaw control lateral motion.
     -->
     
     <compiler angle="degree" inertiafromgeom="true"/>
@@ -24,31 +24,31 @@
     </default>
     
     <asset>
-        <material name="head_mat" rgba="0.8 0.2 0.2 1"/>       <!-- 红色头部 -->
-        <material name="body_mat" rgba="0.3 0.3 0.3 1"/>       <!-- 深灰色身体 -->
-        <material name="tail_mat" rgba="0.9 0.7 0.2 1"/>       <!-- 金黄色尾鳍 -->
+        <material name="head_mat" rgba="0.8 0.2 0.2 1"/>       <!-- Red head. -->
+        <material name="body_mat" rgba="0.3 0.3 0.3 1"/>       <!-- Dark gray body. -->
+        <material name="tail_mat" rgba="0.9 0.7 0.2 1"/>       <!-- Golden tail fin. -->
     </asset>
     
     <worldbody>
-        <!-- ========== 头部 (Head): 根body，包含freejoint ========== -->
+        <!-- Root head with a free joint. -->
         <body name="head" pos="0 0 0">
             <freejoint name="root_joint"/>
             
-            <!-- 头部外壳: 流线型椭球 -->
+            <!-- Streamlined ellipsoid head shell. -->
             <geom name="head_shell" type="ellipsoid"
                   size="0.04 0.06 0.03"
                   pos="0 0 0"
                   material="head_mat"
                   density="1500"/>
             
-            <!-- ========== 身体段1 (Body Segment 1) ========== -->
-            <!-- 头部后端 Y=-0.06 -->
+            <!-- Body segment 1. -->
+            <!-- Rear of head at y=-0.06. -->
             <body name="body_seg1" pos="0 -0.06 0">
-                <!-- Pitch关节: 绕X轴旋转，实现上下俯仰 -->
-                <!-- 注意: axis="-1 0 0" 使正值=抬头，负值=低头 (右手定则) -->
+                <!-- Pitch around x for vertical motion. -->
+                <!-- Negative x makes positive values pitch upward. -->
                 <joint name="seg1_pitch" type="hinge" axis="-1 0 0"
                        limited="true" range="-25 25"/>
-                <!-- Yaw关节: 绕Z轴旋转，实现左右摆动 -->
+                <!-- Yaw around z for lateral motion. -->
                 <joint name="seg1_yaw" type="hinge" axis="0 0 1" 
                        limited="true" range="-30 30"/>
                 
@@ -59,8 +59,8 @@
                       material="body_mat"
                       density="1200"/>
                 
-                <!-- ========== 身体段2 (Body Segment 2) ========== -->
-                <!-- seg1 后端相对关节 Y = -0.04-0.04 = -0.08 -->
+                <!-- Body segment 2. -->
+                <!-- Segment 1 rear is y=-0.08 from the joint. -->
                 <body name="body_seg2" pos="0 -0.08 0">
                     <joint name="seg2_yaw" type="hinge" axis="0 0 1"
                            limited="true" range="-30 30"/>
@@ -71,8 +71,8 @@
                           material="body_mat"
                           density="1200"/>
                     
-                    <!-- ========== 身体段3 (Body Segment 3) ========== -->
-                    <!-- seg2 后端相对关节 Y = -0.08 -->
+                    <!-- Body segment 3. -->
+                    <!-- Segment 2 rear is y=-0.08 from the joint. -->
                     <body name="body_seg3" pos="0 -0.08 0">
                         <joint name="seg3_yaw" type="hinge" axis="0 0 1"
                                limited="true" range="-35 35"/>
@@ -83,23 +83,23 @@
                               material="body_mat"
                               density="1200"/>
                         
-                        <!-- ========== 尾柄 (Tail Peduncle) ========== -->
-                        <!-- seg3 后端相对关节 Y = -0.07 -->
+                        <!-- Tail peduncle. -->
+                        <!-- Segment 3 rear is y=-0.07 from the joint. -->
                         <body name="tail_peduncle" pos="0 -0.07 0">
                             <joint name="tail_yaw" type="hinge" axis="0 0 1"
                                    limited="true" range="-45 45"/>
                             
-                            <!-- 尾柄: capsule 从关节处向后延伸 -->
+                            <!-- Capsule peduncle extends behind the joint. -->
                             <geom name="peduncle_geom" type="capsule"
                                   fromto="0 0 0 0 -0.05 0"
                                   size="0.015"
                                   material="body_mat"
                                   density="1100"/>
                             
-                            <!-- ========== 尾鳍 (Caudal Fin) ========== -->
-                            <!-- capsule 后端 Y = -0.05 -->
+                            <!-- Caudal fin. -->
+                            <!-- Capsule rear is y=-0.05. -->
                             <body name="tail_fin" pos="0 -0.05 0">
-                                <!-- 尾鳍紧贴尾柄 -->
+                                <!-- Tail fin attached to the peduncle. -->
                                 <geom name="tail_fin_geom" type="ellipsoid"
                                       size="0.002 0.04 0.05"
                                       pos="0 -0.04 0"
@@ -117,9 +117,9 @@
     
     <actuator>
         <!-- 
-        5个关节控制:
-        - 1个Pitch关节: 控制俯仰/上下运动
-        - 4个Yaw关节: 控制左右摆动/水平游动
+        Five controlled joints:
+        - One pitch joint for vertical motion
+        - Four yaw joints for lateral swimming
         -->
         <motor name="motor_pitch" joint="seg1_pitch" gear="0.5" ctrlrange="-1 1"/>
         <motor name="motor_seg1" joint="seg1_yaw" gear="0.5" ctrlrange="-1 1"/>

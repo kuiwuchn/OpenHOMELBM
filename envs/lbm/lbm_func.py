@@ -169,25 +169,25 @@ def get_u_img(flow: HomeFlow):
 @wp.kernel
 def get_velocity_rgb(flow: HomeFlow, max_velocity: float):
     """
-    获取 3 通道速度场图像:
-    - R: 速度大小 (magnitude)
-    - G: ux (x方向速度，归一化到 [0,1])
-    - B: uy (y方向速度，归一化到 [0,1])
+    Build a three-channel velocity image:
+    - R: velocity magnitude
+    - G: normalized x velocity
+    - B: normalized y velocity
 
-    ux, uy 归一化方式: (v + max_velocity) / (2 * max_velocity) 映射 [-max, max] -> [0, 1]
+    Map velocity from [-max, max] to [0, 1].
     """
     x, y = wp.tid()
     ux = flow.u[x, y][0]
     uy = flow.u[x, y][1]
 
-    # R: 速度大小，归一化到 [0, 1]
+    # R: normalized velocity magnitude.
     magnitude = wp.sqrt(ux * ux + uy * uy)
     r = wp.clamp(magnitude / max_velocity, 0.0, 1.0)
 
-    # G: ux 归一化 [-max, max] -> [0, 1]
+    # G: normalized x velocity.
     g = wp.clamp((ux + max_velocity) / (2.0 * max_velocity), 0.0, 1.0)
 
-    # B: uy 归一化 [-max, max] -> [0, 1]
+    # B: normalized y velocity.
     b = wp.clamp((uy + max_velocity) / (2.0 * max_velocity), 0.0, 1.0)
 
     flow.u_img_rgb[x, y] = wp.vec3(r, g, b)
@@ -196,52 +196,54 @@ def get_velocity_rgb(flow: HomeFlow, max_velocity: float):
 @wp.kernel
 def get_vorticity_img(flow: HomeFlow):
     """
-    计算涡量场：vorticity = ∂v/∂x - ∂u/∂y
-    使用中心差分格式计算偏导数，边界使用单侧差分
-    结果保存到 flow.u_img 中
+    Compute vorticity as dv/dx - du/dy.
+
+    Use central differences internally and one-sided differences at boundaries.
+    Store the result in ``flow.u_img``.
     """
     x, y = wp.tid()
 
-    # 边界处理：使用单侧差分而不是直接设为0
+    # Use one-sided boundary differences.
     dvdx = 0.0
     dudy = 0.0
 
-    # 计算 ∂v/∂x
+    # Compute dv/dx.
     if x == 0:
-        # 左边界：向前差分
+        # Forward difference at the left boundary.
         dvdx = (flow.u[x + 1, y][1] - flow.u[x, y][1]) / flow.grid_length
     elif x == flow.nx - 1:
-        # 右边界：向后差分
+        # Backward difference at the right boundary.
         dvdx = (flow.u[x, y][1] - flow.u[x - 1, y][1]) / flow.grid_length
     else:
-        # 内部：中心差分
+        # Central difference in the interior.
         dvdx = (flow.u[x + 1, y][1] - flow.u[x - 1, y][1]) / (2.0 * flow.grid_length)
 
-    # 计算 ∂u/∂y
+    # Compute du/dy.
     if y == 0:
-        # 下边界：向前差分
+        # Forward difference at the lower boundary.
         dudy = (flow.u[x, y + 1][0] - flow.u[x, y][0]) / flow.grid_length
     elif y == flow.ny - 1:
-        # 上边界：向后差分
+        # Backward difference at the upper boundary.
         dudy = (flow.u[x, y][0] - flow.u[x, y - 1][0]) / flow.grid_length
     else:
-        # 内部：中心差分
+        # Central difference in the interior.
         dudy = (flow.u[x, y + 1][0] - flow.u[x, y - 1][0]) / (2.0 * flow.grid_length)
 
-    # 涡量 = ∂v/∂x - ∂u/∂y，保存到 u_img
+    # Store vorticity in u_img.
     flow.u_img[x, y] = dvdx - dudy
 
 
 @wp.kernel
 def get_vorticity_with_solid_img(flow: HomeFlow, thickness: float):
     """
-    计算涡量场并叠加固体边界：
+    Compute vorticity and mark solid boundaries.
+
     vorticity = ∂v/∂x - ∂u/∂y
-    固体区域设为特殊值（例如 NaN 或极大值），以便在后处理中区分
+    Use a sentinel value to distinguish solid regions.
     """
     x, y = wp.tid()
 
-    # 1. 检测固体
+    # Detect solid cells.
     pos = wp.vec2(float(x), float(y))
     min_d = float(1.0e6)
     is_inside = int(0)
@@ -281,39 +283,39 @@ def get_vorticity_with_solid_img(flow: HomeFlow, thickness: float):
         if (intersections % 2) == 1:
             is_inside = 1
 
-    # 如果是固体，写入特殊标记 1000.0 (假设正常涡量远小于此值)
+    # Mark solids with a value above normal vorticity.
     if is_inside == 1 or min_d < thickness:
         flow.u_img[x, y] = 1000.0
-        return  # 提前返回
+        return  # Skip fluid calculations.
 
-    # 2. 如果不是固体，计算涡量
-    # 边界处理：使用单侧差分而不是直接设为0
+    # Compute vorticity for fluid cells.
+    # Use one-sided boundary differences.
     dvdx = 0.0
     dudy = 0.0
 
-    # 计算 ∂v/∂x
+    # Compute dv/dx.
     if x == 0:
-        # 左边界：向前差分
+        # Forward difference at the left boundary.
         dvdx = (flow.u[x + 1, y][1] - flow.u[x, y][1]) / flow.grid_length
     elif x == flow.nx - 1:
-        # 右边界：向后差分
+        # Backward difference at the right boundary.
         dvdx = (flow.u[x, y][1] - flow.u[x - 1, y][1]) / flow.grid_length
     else:
-        # 内部：中心差分
+        # Central difference in the interior.
         dvdx = (flow.u[x + 1, y][1] - flow.u[x - 1, y][1]) / (2.0 * flow.grid_length)
 
-    # 计算 ∂u/∂y
+    # Compute du/dy.
     if y == 0:
-        # 下边界：向前差分
+        # Forward difference at the lower boundary.
         dudy = (flow.u[x, y + 1][0] - flow.u[x, y][0]) / flow.grid_length
     elif y == flow.ny - 1:
-        # 上边界：向后差分
+        # Backward difference at the upper boundary.
         dudy = (flow.u[x, y][0] - flow.u[x, y - 1][0]) / flow.grid_length
     else:
-        # 内部：中心差分
+        # Central difference in the interior.
         dudy = (flow.u[x, y + 1][0] - flow.u[x, y - 1][0]) / (2.0 * flow.grid_length)
 
-    # 涡量 = ∂v/∂x - ∂u/∂y
+    # Compute vorticity.
     flow.u_img[x, y] = dvdx - dudy
 
 
@@ -551,7 +553,7 @@ def get_cutcell(
     cutcell_distance: distance ratio along ray (a->b) where intersection occurs
     solid_id: ID of the intersecting solid object
     segment_ratio: position ratio along the solid segment (c->d) where intersection occurs
-    segment_id: ID of the intersecting segment (端点起始ID)
+    segment_id: ID of the intersecting segment's first endpoint
     """
     cutcell = float(-1.0)
     intersect_solid_id = int(-1)

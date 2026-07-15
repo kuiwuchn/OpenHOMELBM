@@ -31,22 +31,43 @@ pip install -r requirements.txt
 
 ### Train the 2D eel with SAC-controlled CPG parameters
 
-The CPG mode makes SAC output four normalized parameters—wave amplitude, frequency,
-spatial phase lag, and head bias—and expands them into a traveling wave over the five
-eel joints. The oscillator phase and current CPG parameters are appended to the policy
-observation.
+The CPG mode uses the same projected 12-segment model and parameterization as
+`configs/realtime_2d/eel2d.json`. SAC outputs four normalized planar parameters:
+`A`, `omega`, `k_wave`, and `head_bias`. They drive the 11 yaw position actuators
+from `eel_3d.xml`; all roll actuators are fixed at zero. The built-in OU warm-up
+mean is the known-working `fast` preset `[0.36, -1.0, 0.65, 0]`.
 
 ```powershell
-python train_sac_minimal.py --animal eel --control-mode cpg --per-frame-steps 4 --cpg-hold-steps 10 --warmup-steps 10 --total-steps 20000
+python train_sac_minimal.py --animal eel --control-mode cpg --per-frame-steps 8 --cpg-ramp-steps 10 --cpg-hold-steps 30 --target-mode random --target-distance-range 0.12 0.25 --target-angle-range-deg -70 70 --episode-steps 100 --warmup-exploration ou --learning-starts 250 --warmup-steps 15 --checkpoint-every 1000 --total-steps 10000
 ```
 
 Use `--render` only for short visual checks; headless training is faster. The model and
 the physical CPG parameter ranges used for training are saved under
-`outputs/sac_minimal/` as `sac_eel2d_cpg.zip` and `sac_eel2d_cpg_config.json`.
+`outputs/sac_minimal/` as `sac_eel2d_goal_cpg.zip` and
+`sac_eel2d_goal_cpg_config.json`.
 In CPG render mode, the right panel shows executed versus SAC-target parameters, the
-five generated motor commands over one cycle, and the actual coupled body centerline
-read from the LBM solid positions. One SAC action is held for 10 low-level control
-steps by default; their rewards are accumulated into one SAC transition.
+11 generated yaw commands over one cycle, and the exact transformed capsule
+polygons used by the LBM coupling. Each SAC target is reached with a 10-step linear ramp,
+then held fixed for 30 low-level control steps; all 40 rewards are accumulated into one
+SAC transition. While rendering,
+the display is refreshed inside that hold interval rather than waiting for the next SAC
+decision. `--render-substep-every 2` renders every other low-level step if GPU readback
+overhead is more important than maximum visual smoothness.
+
+At reset, the goal-conditioned task samples a green target in the eel's forward sector:
+distance `0.12-0.25 * ny` and bearing `-70` to `+70` degrees. Reward is dense target progress,
+`100 * (previous_distance - current_distance) / ny`, with a `+5` arrival bonus inside
+a `0.02 * ny` radius. The body-frame target vector is included in the observation.
+For CPG training, only the latest rigid state is used (no before/after duplication) and
+the noisy generalized-force vector is omitted, reducing policy observation size from
+185 to 45 dimensions. Successful episodes and final target distance are written to the
+Monitor CSV.
+
+During the first `--learning-starts` SAC decisions, CPG mode uses OU-correlated
+exploration around the built-in `fast` preset or an optional `--cpg-seed-config`;
+`A`, `omega`, `k_wave`, and `head_bias` all receive correlated noise, so steering is
+explored from the beginning of warm-up.
+After warm-up, actions come from SAC's stochastic policy without added OU noise.
 
 ### Run the 2D realtime LBM controller:
 

@@ -1,8 +1,8 @@
 """
 MJCF Parser for LBM 3D
 
-解析 MuJoCo MJCF XML 文件，提取 body 几何体信息并生成 trimesh 对象。
-支持的几何体类型：box, sphere, ellipsoid, cylinder, capsule, mesh
+Parse MuJoCo MJCF XML and build trimesh geometry.
+Supported types: box, sphere, ellipsoid, cylinder, capsule, and mesh.
 """
 import xml.etree.ElementTree as ET
 import trimesh
@@ -14,11 +14,11 @@ import os
 
 def parse_mjcf(mjcf_path: str, mesh_search_paths: Optional[List[str]] = None) -> Dict:
     """
-    解析 MJCF XML 文件，返回 bodies 和 joints 信息
+    Parse MJCF XML and return body and joint data.
     
     Args:
-        mjcf_path: MJCF XML 文件路径
-        mesh_search_paths: mesh 文件搜索路径列表
+        mjcf_path: Path to the MJCF XML file.
+        mesh_search_paths: Mesh search paths.
         
     Returns:
         {
@@ -26,11 +26,11 @@ def parse_mjcf(mjcf_path: str, mesh_search_paths: Optional[List[str]] = None) ->
             'bodies': [
                 {
                     'name': str,
-                    'meshes': List[trimesh.Trimesh],  # 该 body 的所有几何体
-                    'combined_mesh': trimesh.Trimesh,  # 合并后的几何体
-                    'parent': str,  # 父 body 名称
-                    'pos': np.array,  # 相对于父 body 的位置
-                    'quat': np.array,  # 相对于父 body 的四元数 (w,x,y,z)
+                    'meshes': List[trimesh.Trimesh],  # Body geometries.
+                    'combined_mesh': trimesh.Trimesh,  # Combined geometry.
+                    'parent': str,  # Parent body name.
+                    'pos': np.array,  # Parent-relative position.
+                    'quat': np.array,  # Parent-relative quaternion.
                 },
                 ...
             ],
@@ -38,7 +38,7 @@ def parse_mjcf(mjcf_path: str, mesh_search_paths: Optional[List[str]] = None) ->
                 {
                     'name': str,
                     'type': str,
-                    'body': str,  # 所属 body
+                    'body': str,  # Owning body.
                     'axis': np.array,
                     'range': (float, float),
                 },
@@ -49,17 +49,17 @@ def parse_mjcf(mjcf_path: str, mesh_search_paths: Optional[List[str]] = None) ->
     if not os.path.exists(mjcf_path):
         raise FileNotFoundError(f"MJCF file not found: {mjcf_path}")
     
-    # 设置搜索路径
+    # Configure mesh search paths.
     search_paths = mesh_search_paths or []
     mjcf_dir = os.path.dirname(os.path.abspath(mjcf_path))
     if mjcf_dir not in search_paths:
         search_paths.insert(0, mjcf_dir)
     
-    # 解析 XML
+    # Parse the XML tree.
     tree = ET.parse(mjcf_path)
     root = tree.getroot()
     
-    # 解析 compiler 元素中的 meshdir 属性
+    # Read meshdir from the compiler element.
     compiler_elem = root.find('compiler')
     if compiler_elem is not None:
         meshdir = compiler_elem.get('meshdir')
@@ -69,7 +69,7 @@ def parse_mjcf(mjcf_path: str, mesh_search_paths: Optional[List[str]] = None) ->
                 search_paths.insert(0, meshdir_abs)
     model_name = root.get('model', 'unnamed_model')
     
-    # 解析 asset 中的 mesh 定义
+    # Parse mesh assets.
     mesh_assets = {}
     asset_elem = root.find('asset')
     if asset_elem is not None:
@@ -80,7 +80,7 @@ def parse_mjcf(mjcf_path: str, mesh_search_paths: Optional[List[str]] = None) ->
             scale = np.array([float(x) for x in mesh_scale.split()])
             mesh_assets[mesh_name] = {'file': mesh_file, 'scale': scale}
     
-    # 递归解析 worldbody
+    # Parse worldbody recursively.
     bodies = []
     joints = []
     
@@ -98,34 +98,34 @@ def parse_mjcf(mjcf_path: str, mesh_search_paths: Optional[List[str]] = None) ->
 def _parse_body_recursive(parent_elem, parent_name: Optional[str], 
                           bodies: List, joints: List,
                           mesh_assets: Dict, search_paths: List[str]):
-    """递归解析 body 元素"""
+    """Parse a body element recursively."""
     for body_elem in parent_elem.findall('body'):
         body_name = body_elem.get('name', f'body_{len(bodies)}')
         
-        # 解析位置和姿态
+        # Parse position and orientation.
         pos_str = body_elem.get('pos', '0 0 0')
         pos = np.array([float(x) for x in pos_str.split()])
         
         quat_str = body_elem.get('quat', '1 0 0 0')  # MuJoCo: (w, x, y, z)
         quat = np.array([float(x) for x in quat_str.split()])
         
-        # 也支持 euler 角度
+        # Support Euler angles.
         euler_str = body_elem.get('euler')
         if euler_str is not None:
             euler = np.array([float(x) for x in euler_str.split()])
-            # 转换为四元数
+            # Convert to a quaternion.
             r = R.from_euler('xyz', euler, degrees=True)
             quat_xyzw = r.as_quat()
             quat = np.array([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]])
         
-        # 解析该 body 的所有 geom
+        # Parse all body geometries.
         meshes = []
         for geom_elem in body_elem.findall('geom'):
             mesh = _parse_geom(geom_elem, mesh_assets, search_paths)
             if mesh is not None:
                 meshes.append(mesh)
         
-        # 合并所有 mesh
+        # Combine all meshes.
         combined_mesh = None
         if len(meshes) == 1:
             combined_mesh = meshes[0]
@@ -142,21 +142,21 @@ def _parse_body_recursive(parent_elem, parent_name: Optional[str],
                 'quat': quat,
             })
         
-        # 解析 joints
+        # Parse joints.
         for joint_elem in body_elem.findall('joint'):
             joint_info = _parse_joint(joint_elem, body_name)
             if joint_info is not None:
                 joints.append(joint_info)
         
-        # 递归解析子 body
+        # Parse child bodies recursively.
         _parse_body_recursive(body_elem, body_name, bodies, joints, mesh_assets, search_paths)
 
 
 def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Optional[trimesh.Trimesh]:
-    """解析单个 geom 元素，返回 trimesh 对象"""
+    """Parse one geometry element into a trimesh object."""
     geom_type = geom_elem.get('type', 'sphere')
     
-    # 解析 geom 的局部位置和姿态
+    # Parse the local position and orientation.
     pos_str = geom_elem.get('pos', '0 0 0')
     pos = np.array([float(x) for x in pos_str.split()])
     
@@ -170,7 +170,7 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
         quat_xyzw = r.as_quat()
         quat = np.array([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]])
     
-    # 创建几何体
+    # Create the geometry.
     mesh = None
     
     if geom_type == 'box':
@@ -186,7 +186,7 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
     elif geom_type == 'ellipsoid':
         size_str = geom_elem.get('size', '0.5 0.5 0.5')
         radii = np.array([float(x) for x in size_str.split()])
-        # 创建单位球，然后缩放
+        # Create and scale a unit sphere.
         mesh = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
         mesh.vertices *= radii
         
@@ -195,7 +195,7 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
         sizes = [float(x) for x in size_str.split()]
         radius = sizes[0]
         
-        # 检查 fromto 属性
+        # Check the fromto attribute.
         fromto_str = geom_elem.get('fromto')
         if fromto_str is not None:
             fromto = np.array([float(x) for x in fromto_str.split()])
@@ -203,10 +203,10 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
             p2 = fromto[3:]
             length = np.linalg.norm(p2 - p1)
             
-            # 创建圆柱体
+            # Create the cylinder.
             mesh = trimesh.creation.cylinder(radius=radius, height=length, sections=32)
             
-            # 计算旋转：从 Z 轴（trimesh默认）到 (p2-p1) 方向
+            # Rotate the default z-axis onto p2-p1.
             direction = (p2 - p1) / length if length > 1e-6 else np.array([0, 0, 1])
             z_axis = np.array([0, 0, 1])
             
@@ -223,7 +223,7 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
             
             mesh.vertices = mesh.vertices @ rot_matrix.T
             
-            # 移动到中点
+            # Move to the midpoint.
             center = (p1 + p2) / 2
             mesh.vertices += center
             
@@ -237,7 +237,7 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
         sizes = [float(x) for x in size_str.split()]
         radius = sizes[0]
         
-        # 检查 fromto 属性
+        # Check the fromto attribute.
         fromto_str = geom_elem.get('fromto')
         if fromto_str is not None:
             fromto = np.array([float(x) for x in fromto_str.split()])
@@ -245,10 +245,10 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
             p2 = fromto[3:]
             length = np.linalg.norm(p2 - p1)
             
-            # 创建胶囊体
+            # Create the capsule.
             mesh = trimesh.creation.capsule(height=length, radius=radius, count=[16, 8])
             
-            # 计算旋转：从 Z 轴（trimesh默认）到 (p2-p1) 方向
+            # Rotate the default z-axis onto p2-p1.
             direction = (p2 - p1) / length if length > 1e-6 else np.array([0, 0, 1])
             z_axis = np.array([0, 0, 1])
             
@@ -265,7 +265,7 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
             
             mesh.vertices = mesh.vertices @ rot_matrix.T
             
-            # 移动到中点
+            # Move to the midpoint.
             center = (p1 + p2) / 2
             mesh.vertices += center
             
@@ -287,20 +287,20 @@ def _parse_geom(geom_elem, mesh_assets: Dict, search_paths: List[str]) -> Option
     if mesh is None:
         return None
     
-    # 应用局部变换
-    # 旋转
+    # Apply the local transform.
+    # Rotate.
     quat_scipy = [quat[1], quat[2], quat[3], quat[0]]  # scipy: (x, y, z, w)
     rotation = R.from_quat(quat_scipy)
     mesh.vertices = rotation.apply(mesh.vertices)
     
-    # 平移
+    # Translate.
     mesh.vertices += pos
     
     return mesh
 
 
 def _parse_joint(joint_elem, body_name: str) -> Optional[Dict]:
-    """解析单个 joint 元素"""
+    """Parse one joint element."""
     joint_name = joint_elem.get('name', f'joint_{body_name}')
     joint_type = joint_elem.get('type', 'hinge')
     
@@ -321,15 +321,15 @@ def _parse_joint(joint_elem, body_name: str) -> Optional[Dict]:
 
 
 def _resolve_mesh_path(mesh_uri: str, search_paths: List[str]) -> Optional[str]:
-    """解析 mesh 文件路径"""
+    """Resolve a mesh file path."""
     if mesh_uri is None:
         return None
         
-    # 绝对路径
+    # Check an absolute path.
     if os.path.isabs(mesh_uri):
         return mesh_uri if os.path.exists(mesh_uri) else None
     
-    # 相对路径
+    # Check relative paths.
     for sp in search_paths:
         full_path = os.path.join(sp, mesh_uri)
         if os.path.exists(full_path):
@@ -340,27 +340,27 @@ def _resolve_mesh_path(mesh_uri: str, search_paths: List[str]) -> Optional[str]:
 
 def get_body_world_positions(mjcf_data: Dict) -> Dict[str, np.ndarray]:
     """
-    计算每个 body 的世界坐标位置（相对于 worldbody）
+    Compute each body's world position.
     
     Returns:
         {body_name: world_position}
     """
     bodies = mjcf_data['bodies']
     
-    # 建立 name -> body 映射
+    # Map names to bodies.
     body_map = {b['name']: b for b in bodies}
     
-    # 计算世界位置
+    # Compute world positions.
     world_positions = {}
     
     for body in bodies:
         pos = body['pos'].copy()
         parent_name = body['parent']
         
-        # 向上遍历到 worldbody
+        # Traverse upward to worldbody.
         while parent_name is not None and parent_name in body_map:
             parent = body_map[parent_name]
-            # 应用父 body 的旋转
+            # Apply the parent rotation.
             parent_quat = parent['quat']
             quat_scipy = [parent_quat[1], parent_quat[2], parent_quat[3], parent_quat[0]]
             rotation = R.from_quat(quat_scipy)
@@ -374,11 +374,11 @@ def get_body_world_positions(mjcf_data: Dict) -> Dict[str, np.ndarray]:
 
 def parse_mjcf_to_meshes(mjcf_path: str, mesh_search_paths: Optional[List[str]] = None) -> Dict[str, trimesh.Trimesh]:
     """
-    解析 MJCF XML 文件，返回 body 名称到 mesh 的映射
+    Parse MJCF XML and map body names to meshes.
     
     Args:
-        mjcf_path: MJCF XML 文件路径
-        mesh_search_paths: mesh 文件搜索路径列表
+        mjcf_path: Path to the MJCF XML file.
+        mesh_search_paths: Mesh search paths.
         
     Returns:
         {body_name: trimesh.Trimesh}
@@ -395,7 +395,7 @@ def parse_mjcf_to_meshes(mjcf_path: str, mesh_search_paths: Optional[List[str]] 
 
 def parse_mjcf_as_urdf_format(mjcf_path: str) -> Dict:
     """
-    解析 MJCF 并返回与 parse_urdf 兼容的格式
+    Parse MJCF into a parse_urdf-compatible structure.
     
     Returns:
         {
@@ -427,23 +427,23 @@ def parse_mjcf_as_urdf_format(mjcf_path: str) -> Dict:
     """
     mjcf_data = parse_mjcf(mjcf_path)
     
-    # 转换 bodies -> links
+    # Convert bodies to links.
     links = []
     for body in mjcf_data['bodies']:
         links.append({
             'name': body['name'],
             'mesh': body['combined_mesh'],
-            'origin_xyz': np.zeros(3),  # MJCF 中 geom 已经包含了偏移
+            'origin_xyz': np.zeros(3),  # MJCF geometry includes its offset.
             'origin_rpy': np.zeros(3),
-            'mass': 1.0,  # 默认值
+            'mass': 1.0,  # Default value.
             'inertia': np.eye(3) * 0.01,
         })
     
-    # 转换 joints：从 MJCF 的 body 层级关系构建
+    # Build joints from the MJCF body hierarchy.
     joints = []
     for body in mjcf_data['bodies']:
         if body['parent'] is not None:
-            # 将四元数转换为 RPY
+            # Convert the quaternion to RPY.
             quat = body['quat']
             quat_scipy = [quat[1], quat[2], quat[3], quat[0]]
             rpy = R.from_quat(quat_scipy).as_euler('xyz')

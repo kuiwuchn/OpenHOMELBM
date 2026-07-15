@@ -28,7 +28,7 @@
                   density="8000"/>
 
             <!-- Leg 0: +Y direction (vertical paddle blade) -->
-            <!-- size: thin(X) × long(Y) × tall(Z), Z竖起来增大迎水面积 -->
+            <!-- Thin X, long Y, and tall Z increase frontal area. -->
             <!-- density=5000, volume=0.01×0.14×0.04=5.6e-5 m³ → mass≈0.28 kg -->
             <body name="leg_0" pos="0 0.02 0">
                 <joint name="leg_0_yaw" type="hinge" axis="0 0 1" limited="true" range="-50 50"/>

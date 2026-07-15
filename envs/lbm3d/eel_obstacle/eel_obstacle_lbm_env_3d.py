@@ -1,12 +1,12 @@
 """
 3D Eel/Ribbon Fish LBM Environment with Static Obstacle
 
-鳗鱼机器人绕障碍物游向目标的环境。
-继承 Eel3DLBMEnv，在其基础上添加：
-1. 静态障碍物（无 joint 的 body，由基类自动标记为 is_static）
-2. 观测中加入与障碍物的相对位置
-3. 奖励中加入障碍物避让惩罚
-4. 终止条件中加入与障碍物距离检查
+The eel swims around a static obstacle toward a goal.
+Extensions to Eel3DLBMEnv:
+1. A jointless static obstacle
+2. Obstacle-relative position in observations
+3. An obstacle-avoidance reward penalty
+4. An obstacle-distance termination check
 """
 
 import gym
@@ -250,8 +250,8 @@ class Eel3DObstacleLBMEnv(Eel3DLBMEnv):
     """
     3D Eel swimming environment with a static obstacle.
     
-    鳗鱼机器人需要绕过一个静态障碍物，游向目标点。
-    障碍物作为固定 body 在 LBM 中阻挡流体，但不接收流体力反馈。
+    The eel must swim around a static obstacle toward the goal.
+    The obstacle blocks LBM flow without receiving fluid-force feedback.
     
     Changes from base Eel3DLBMEnv:
     - Uses eel_obstacle_3d.xml (includes static obstacle body)

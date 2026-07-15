@@ -6,37 +6,36 @@ from typing import Tuple, Optional, Dict
 def extract_mesh_projection_2d(model: mujoco.MjModel, geom_id: int, 
                                n_samples: Optional[int] = None) -> np.ndarray:
     """
-    从 MuJoCo mesh 几何体提取 xy 平面投影
+    Project a MuJoCo mesh geometry onto the xy plane.
     
-    参数:
-        model: MuJoCo 模型
-        geom_id: 几何体 ID
-        n_samples: 可选的重采样点数量，如果为 None 则使用所有投影顶点
+    Args:
+        model: MuJoCo model.
+        geom_id: Geometry ID.
+        n_samples: Optional number of resampled points.
     
-    返回:
-        numpy array: 投影顶点坐标 (N, 2)
+    Returns:
+        numpy array: Projected vertices shaped (N, 2).
     """
-    # 获取 mesh 数据 ID
+    # Get the mesh data ID.
     dataid = model.geom_dataid[geom_id]
     
     if dataid < 0:
         print(f"警告: 几何体 {geom_id} 没有有效的 mesh 数据")
-        # 返回默认圆形
+        # Return a fallback circle.
         angles = np.linspace(0, 2*np.pi, n_samples or 20, endpoint=False)
         return np.column_stack([0.1 * np.cos(angles), 0.1 * np.sin(angles)])
     
-    # 获取 mesh 的顶点数据
-    # MuJoCo 的 mesh 数据存储在 model.mesh_vert 中
-    mesh_vertadr = model.mesh_vertadr[dataid]  # 起始地址
-    mesh_vertnum = model.mesh_vertnum[dataid]  # 顶点数量
+    # Read vertices from model.mesh_vert.
+    mesh_vertadr = model.mesh_vertadr[dataid]  # Start offset.
+    mesh_vertnum = model.mesh_vertnum[dataid]  # Vertex count.
     
-    # 提取顶点（3D 坐标）
+    # Extract 3D vertices.
     vertices_3d = model.mesh_vert[mesh_vertadr:mesh_vertadr + mesh_vertnum].reshape(-1, 3)
     
-    # 投影到 xy 平面
-    vertices_2d = vertices_3d[:, :2]  # 只取 x, y 坐标
+    # Project onto the xy plane.
+    vertices_2d = vertices_3d[:, :2]  # Keep x and y.
     
-    # 如果需要重采样到固定数量的点
+    # Resample to a fixed count when requested.
     if n_samples is not None and len(vertices_2d) != n_samples:
         vertices_2d = resample_polygon(vertices_2d, n_samples)
     
@@ -45,20 +44,19 @@ def extract_mesh_projection_2d(model: mujoco.MjModel, geom_id: int,
 
 def resample_polygon(vertices: np.ndarray, n_samples: int) -> np.ndarray:
     """
-    重采样多边形顶点到指定数量
-    沿着多边形边界均匀采样
+    Resample vertices uniformly along a polygon boundary.
     
-    参数:
-        vertices: 原始顶点 (N, 2)
-        n_samples: 目标采样点数量
+    Args:
+        vertices: Original vertices shaped (N, 2).
+        n_samples: Target point count.
     
-    返回:
-        numpy array: 重采样后的顶点 (n_samples, 2)
+    Returns:
+        numpy array: Resampled vertices shaped (n_samples, 2).
     """
     if len(vertices) < 2:
         return vertices
     
-    # 计算凸包以获得外轮廓
+    # Use the convex hull as the outer boundary.
     try:
         from scipy.spatial import ConvexHull
         if len(vertices) >= 3:
@@ -67,30 +65,30 @@ def resample_polygon(vertices: np.ndarray, n_samples: int) -> np.ndarray:
     except:
         pass
     
-    # 计算累积弧长
-    vertices_closed = np.vstack([vertices, vertices[0]])  # 闭合多边形
+    # Compute cumulative arc length.
+    vertices_closed = np.vstack([vertices, vertices[0]])  # Close the polygon.
     segments = np.diff(vertices_closed, axis=0)
     segment_lengths = np.linalg.norm(segments, axis=1)
     cumulative_length = np.concatenate([[0], np.cumsum(segment_lengths)])
     total_length = cumulative_length[-1]
     
     if total_length < 1e-10:
-        # 所有点重合，返回均匀分布的圆
+        # Return a circle when all points coincide.
         angles = np.linspace(0, 2*np.pi, n_samples, endpoint=False)
         radius = 0.1
         return np.column_stack([radius * np.cos(angles), radius * np.sin(angles)])
     
-    # 在总弧长上均匀采样
+    # Sample uniformly over total arc length.
     sample_positions = np.linspace(0, total_length, n_samples, endpoint=False)
     
-    # 插值得到新的顶点
+    # Interpolate new vertices.
     new_vertices = []
     for pos in sample_positions:
-        # 找到对应的线段
+        # Find the containing segment.
         segment_idx = np.searchsorted(cumulative_length[1:], pos)
         segment_idx = min(segment_idx, len(vertices) - 1)
         
-        # 在线段内插值
+        # Interpolate within the segment.
         t = (pos - cumulative_length[segment_idx]) / (segment_lengths[segment_idx] + 1e-10)
         t = np.clip(t, 0, 1)
         
@@ -102,16 +100,16 @@ def resample_polygon(vertices: np.ndarray, n_samples: int) -> np.ndarray:
 
 def get_mesh_info(model: mujoco.MjModel, mesh_name: str) -> Dict:
     """
-    获取 mesh 的详细信息
+    Return details for a named mesh.
     
-    参数:
-        model: MuJoCo 模型
-        mesh_name: mesh 名称
+    Args:
+        model: MuJoCo model.
+        mesh_name: Mesh name.
     
-    返回:
-        字典包含 mesh 的详细信息
+    Returns:
+        dict: Mesh metadata and geometry arrays.
     """
-    # 查找 mesh ID
+    # Find the mesh ID.
     mesh_id = -1
     for i in range(model.nmesh):
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_MESH, i)
@@ -122,19 +120,19 @@ def get_mesh_info(model: mujoco.MjModel, mesh_name: str) -> Dict:
     if mesh_id < 0:
         raise ValueError(f"未找到 mesh: {mesh_name}")
     
-    # 提取 mesh 信息
+    # Extract mesh metadata.
     mesh_vertadr = model.mesh_vertadr[mesh_id]
     mesh_vertnum = model.mesh_vertnum[mesh_id]
     mesh_faceadr = model.mesh_faceadr[mesh_id]
     mesh_facenum = model.mesh_facenum[mesh_id]
     
-    # 提取顶点
+    # Extract vertices.
     vertices = model.mesh_vert[mesh_vertadr:mesh_vertadr + mesh_vertnum].reshape(-1, 3)
     
-    # 提取面（三角形）
+    # Extract triangular faces.
     faces = model.mesh_face[mesh_faceadr:mesh_faceadr + mesh_facenum].reshape(-1, 3)
     
-    # 计算边界框
+    # Compute the bounding box.
     bbox_min = np.min(vertices, axis=0)
     bbox_max = np.max(vertices, axis=0)
     
@@ -154,34 +152,34 @@ def get_mesh_info(model: mujoco.MjModel, mesh_name: str) -> Dict:
 def get_geom_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData, 
                          geom_name: str, n_samples: int = 20) -> np.ndarray:
     """
-    获取 MuJoCo 几何体在 xy 平面上的投影顶点
+    Project a MuJoCo geometry onto the xy plane.
     
-    参数:
-        model: MuJoCo 模型
-        data: MuJoCo 数据
-        geom_name: 几何体名称
-        n_samples: 采样点数量（对于圆形/圆柱等）
+    Args:
+        model: MuJoCo model.
+        data: MuJoCo data.
+        geom_name: Geometry name.
+        n_samples: Sample count for curved geometry.
     
-    返回:
-        numpy array: 顶点坐标数组，形状为 (N, 2)，表示 xy 平面上的点
+    Returns:
+        numpy array: Projected vertices shaped (N, 2).
     """
-    # 获取几何体 ID
+    # Get the geometry ID.
     geom_id = model.geom(geom_name).id
     geom_type = model.geom_type[geom_id]
     geom_size = model.geom_size[geom_id]
     
-    # 获取几何体的全局位置和方向
-    geom_pos = data.geom_xpos[geom_id][:2]  # xy 坐标
-    geom_mat = data.geom_xmat[geom_id].reshape(3, 3)  # 旋转矩阵
+    # Read the world position and orientation.
+    geom_pos = data.geom_xpos[geom_id][:2]  # xy coordinates.
+    geom_mat = data.geom_xmat[geom_id].reshape(3, 3)  # Rotation matrix.
     
-    # 提取 xy 平面上的旋转角度（绕 z 轴）
+    # Extract rotation around the z-axis.
     rotation_angle = np.arctan2(geom_mat[1, 0], geom_mat[0, 0])
     
     vertices = []
     
-    # 根据几何体类型生成顶点
+    # Generate vertices by geometry type.
     if geom_type == mujoco.mjtGeom.mjGEOM_BOX:
-        # 盒子：使用尺寸信息生成4个顶点
+        # Build four box corners from its size.
         half_x, half_y = geom_size[0], geom_size[1]
         local_vertices = np.array([
             [-half_x, -half_y],
@@ -191,7 +189,7 @@ def get_geom_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData,
         ])
         
     elif geom_type == mujoco.mjtGeom.mjGEOM_SPHERE or geom_type == mujoco.mjtGeom.mjGEOM_CYLINDER:
-        # 球体或圆柱：生成圆形采样点
+        # Sample a circle for spheres and cylinders.
         radius = geom_size[0]
         angles = np.linspace(0, 2*np.pi, n_samples, endpoint=False)
         local_vertices = np.column_stack([
@@ -200,48 +198,43 @@ def get_geom_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData,
         ])
         
     elif geom_type == mujoco.mjtGeom.mjGEOM_CAPSULE:
-        # 胶囊体：近似为圆角矩形
+        # Approximate a capsule as a rounded rectangle.
         radius = geom_size[0]
         half_length = geom_size[1]
         
-        # 对于使用 fromto 定义的 capsule，geom_size[1] 可能是 0
-        # 需要从 geom_rbound 计算实际半长度
+        # Recover fromto capsule length from geom_rbound.
         if half_length < 1e-6:
-            # geom_rbound 是几何体的包围球半径
-            # 对于 capsule: rbound = half_length + radius
+            # Capsule rbound equals half-length plus radius.
             rbound = model.geom_rbound[geom_id]
             half_length = rbound - radius
             if half_length < 0:
                 half_length = 0.0
         
-        # 获取 capsule 的局部方向（从 geom_xmat 的 z 轴，即第三列）
-        # MuJoCo capsule 默认沿局部 z 轴延伸
-        # 但我们在 2D 中工作，需要从 fromto 推断方向
-        # geom_pos 存储的是 capsule 中心，geom_xmat 的第三列是 capsule 的轴向
-        capsule_axis_3d = geom_mat[:, 2]  # z 轴方向（capsule 延伸方向）
-        capsule_axis_2d = capsule_axis_3d[:2]  # 投影到 xy 平面
+        # MuJoCo capsules extend along their local z-axis.
+        capsule_axis_3d = geom_mat[:, 2]  # Capsule axis.
+        capsule_axis_2d = capsule_axis_3d[:2]  # Project onto xy.
         axis_len = np.linalg.norm(capsule_axis_2d)
         
         if axis_len > 1e-6:
-            # capsule 在 xy 平面有方向分量
+            # Normalize the in-plane capsule direction.
             capsule_dir = capsule_axis_2d / axis_len
-            # 计算 capsule 相对于 y 轴的旋转角度
-            capsule_angle = np.arctan2(capsule_dir[0], capsule_dir[1])  # 相对于 +y 轴
+            # Measure capsule rotation from +y.
+            capsule_angle = np.arctan2(capsule_dir[0], capsule_dir[1])  # Relative to +y.
         else:
-            # capsule 垂直于 xy 平面，退化为圆
+            # A perpendicular capsule projects to a circle.
             capsule_angle = 0.0
         
-        # 生成两个半圆和两条直线（在 capsule 局部坐标系中，沿 y 轴）
+        # Build two semicircles around the local y-axis.
         n_half = n_samples // 2
         
-        # 上半圆（+y 方向端点）
+        # Upper semicircle at +y.
         angles_top = np.linspace(0, np.pi, n_half, endpoint=False)
         top_vertices = np.column_stack([
             radius * np.cos(angles_top),
             half_length + radius * np.sin(angles_top)
         ])
         
-        # 下半圆（-y 方向端点）
+        # Lower semicircle at -y.
         angles_bottom = np.linspace(np.pi, 2*np.pi, n_half, endpoint=False)
         bottom_vertices = np.column_stack([
             radius * np.cos(angles_bottom),
@@ -250,15 +243,14 @@ def get_geom_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData,
         
         local_vertices_capsule = np.vstack([top_vertices, bottom_vertices])
         
-        # 将 capsule 局部坐标旋转到几何体局部坐标
-        # capsule_angle 是 capsule 轴相对于 y 轴的角度
+        # Rotate capsule-local points into geometry space.
         cos_a, sin_a = np.cos(capsule_angle), np.sin(capsule_angle)
         capsule_rot = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
         local_vertices = local_vertices_capsule @ capsule_rot.T
         
     elif geom_type == mujoco.mjtGeom.mjGEOM_ELLIPSOID:
-        # 椭球：使用三个尺寸参数生成椭圆采样点
-        a, b = geom_size[0], geom_size[1]  # xy 半轴
+        # Sample the ellipsoid's xy ellipse.
+        a, b = geom_size[0], geom_size[1]  # xy semi-axes.
         angles = np.linspace(0, 2*np.pi, n_samples, endpoint=False)
         local_vertices = np.column_stack([
             a * np.cos(angles),
@@ -266,11 +258,11 @@ def get_geom_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData,
         ])
         
     elif geom_type == mujoco.mjtGeom.mjGEOM_MESH:
-        # 网格：从 MuJoCo mesh 数据中提取并投影到 xy 平面
+        # Extract and project MuJoCo mesh vertices.
         local_vertices = extract_mesh_projection_2d(model, geom_id, n_samples)
         
     else:
-        # 其他类型：默认生成小圆
+        # Use a small circle for unsupported types.
         print(f"警告: 几何体类型 {geom_type} 未完全支持，使用默认圆形")
         radius = 0.1
         angles = np.linspace(0, 2*np.pi, n_samples, endpoint=False)
@@ -279,7 +271,7 @@ def get_geom_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData,
             radius * np.sin(angles)
         ])
     
-    # 应用旋转和平移变换
+    # Apply rotation and translation.
     rotation_matrix = np.array([
         [np.cos(rotation_angle), -np.sin(rotation_angle)],
         [np.sin(rotation_angle), np.cos(rotation_angle)]
@@ -293,20 +285,20 @@ def get_geom_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData,
 def get_body_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData, 
                          body_name: str, n_samples: int = 20) -> np.ndarray:
     """
-    获取 MuJoCo 刚体（body）的所有几何体在 xy 平面上的组合投影
+    Combine all body geometries projected onto the xy plane.
     
-    参数:
-        model: MuJoCo 模型
-        data: MuJoCo 数据
-        body_name: 刚体名称
-        n_samples: 每个几何体的采样点数量
+    Args:
+        model: MuJoCo model.
+        data: MuJoCo data.
+        body_name: Body name.
+        n_samples: Samples per geometry.
     
-    返回:
-        numpy array: 组合顶点坐标数组，形状为 (N, 2)
+    Returns:
+        numpy array: Combined vertices shaped (N, 2).
     """
     body_id = model.body(body_name).id
     
-    # 获取该刚体的所有几何体
+    # Find all geometries attached to the body.
     geom_vertices_list = []
     
     for geom_id in range(model.ngeom):
@@ -318,7 +310,7 @@ def get_body_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData,
     if not geom_vertices_list:
         raise ValueError(f"刚体 '{body_name}' 没有关联的几何体")
     
-    # 合并所有几何体的顶点
+    # Combine all geometry vertices.
     all_vertices = np.vstack(geom_vertices_list)
     
     return all_vertices
@@ -326,13 +318,13 @@ def get_body_vertices_2d(model: mujoco.MjModel, data: mujoco.MjData,
 
 def compute_convex_hull_2d(vertices: np.ndarray) -> np.ndarray:
     """
-    计算二维点集的凸包
+    Compute the convex hull of 2D points.
     
-    参数:
-        vertices: 顶点数组，形状为 (N, 2)
+    Args:
+        vertices: Vertices shaped (N, 2).
     
-    返回:
-        numpy array: 凸包顶点，按逆时针顺序排列
+    Returns:
+        numpy array: Counterclockwise hull vertices.
     """
     from scipy.spatial import ConvexHull
     
@@ -344,7 +336,7 @@ def compute_convex_hull_2d(vertices: np.ndarray) -> np.ndarray:
         hull_vertices = vertices[hull.vertices]
         return hull_vertices
     except:
-        # 如果凸包计算失败，返回原始顶点
+        # Return the original vertices if hull creation fails.
         print("警告: 凸包计算失败，返回原始顶点")
         return vertices
 
@@ -357,32 +349,28 @@ def extract_lbm_polygon_from_mujoco(model: mujoco.MjModel,
                                    normalize: bool = True,
                                    is_body: bool = True) -> Dict:
     """
-    从 MuJoCo 提取物体信息并转换为 LBM 求解器输入格式
-    
-    参数:
-        model: MuJoCo 模型
-        data: MuJoCo 数据
-        body_or_geom_name: 刚体或几何体名称
-        n_samples: 采样点数量
-        use_convex_hull: 是否计算凸包
-        normalize: 是否规范化到原点
-        scale: 规范化缩放因子
-        is_body: True 表示输入的是 body 名称，False 表示是 geom 名称
-    
-    返回:
-        字典包含:
-            - 'vertices': 顶点坐标 (N, 2)
-            - 'position': 物体位置 (x, y)
-            - 'angle': 物体角度（弧度）
-            - 'scale_factor': 建议的 LBM 缩放因子
+    Convert MuJoCo object data into LBM solver input.
+
+    Args:
+        model: MuJoCo model.
+        data: MuJoCo data.
+        body_or_geom_name: Body or geometry name.
+        n_samples: Sample count.
+        use_convex_hull: Whether to compute a convex hull.
+        normalize: Whether to center the vertices.
+        scale: Normalization scale.
+        is_body: Whether the name identifies a body.
+
+    Returns:
+        dict: Vertices, position, angle, and scale factor.
     """
-    # 提取顶点
+    # Extract projected vertices.
     if is_body:
         vertices = get_body_vertices_2d(model, data, body_or_geom_name, n_samples)
         body_id = model.body(body_or_geom_name).id
         position = data.body(body_id).xipos[:2]
         
-        # 提取旋转角度（绕 z 轴）
+        # Extract rotation around z.
         quat = data.body(body_id).xquat  # w, x, y, z
         angle = np.arctan2(2*(quat[0]*quat[3] + quat[1]*quat[2]), 
                           1 - 2*(quat[2]**2 + quat[3]**2))
@@ -391,11 +379,11 @@ def extract_lbm_polygon_from_mujoco(model: mujoco.MjModel,
         geom_id = model.geom(body_or_geom_name).id
         position = data.geom_xpos[geom_id][:2]
         
-        # 提取旋转角度
+        # Extract the rotation angle.
         geom_mat = data.geom_xmat[geom_id].reshape(3, 3)
         angle = np.arctan2(geom_mat[1, 0], geom_mat[0, 0])
     
-    # 计算凸包
+    # Compute the convex hull.
     if use_convex_hull and len(vertices) > 3:
         vertices = compute_convex_hull_2d(vertices)
     

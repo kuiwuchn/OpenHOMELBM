@@ -2,16 +2,16 @@
 3D Serial Fish LBM Environment for MuJoCo Warp with nworld support
 Multi-goal version: robot navigates to goal points in 3D space
 
-串联多关节机器鱼环境 - 基于LBM流体仿真
-结构:
-- 头部 (head): 刚性椭球，包含freejoint
-- 身体段1-3 (body_seg1/2/3): 方形截面，seg1有pitch+yaw关节，seg2/3有yaw关节
-- 尾柄 (tail_peduncle): 细长连接段，一个yaw关节  
-- 尾鳍 (tail_fin): 扇形推进
+LBM environment for a serial multi-joint robotic fish.
+Structure:
+- Head: rigid ellipsoid with a free joint
+- Body segments 1-3: box sections with pitch and yaw at segment 1
+- Tail peduncle: slender link with one yaw joint
+- Tail fin: fan-shaped propulsor
 
-控制: 5个关节
-- 1个pitch关节 (seg1_pitch): 控制俯仰，实现上浮/下潜
-- 4个yaw关节 (seg1_yaw ~ tail_yaw): 控制左右摆动，实现波动推进
+Control: five joints
+- One pitch joint controls ascent and descent.
+- Four yaw joints drive lateral undulation.
 """
 import gym
 from gym import spaces
@@ -273,7 +273,7 @@ def compute_smooth_reward_serial_fish_kernel(
     4. Pitch alignment reward: encourage pitch to align with vertical goal direction
     
     Joint layout (5 joints, action indices):
-    - action[0]: seg1_pitch (俯仰控制上下)
+    - action[0]: seg1_pitch (vertical control)
     - action[1]: seg1_yaw
     - action[2]: seg2_yaw
     - action[3]: seg3_yaw
@@ -501,7 +501,7 @@ class SerialFish3DLBMEnv(LBMFluidEnv3D):
     3D Serial Fish swimming environment with LBM fluid simulation.
     Multi-goal version: robot navigates to goal points in 3D space.
     
-    串联多关节机器鱼，模拟真实鱼类的波动推进运动。
+    Models undulatory propulsion with a serial multi-joint robotic fish.
     
     Structure:
     - Head (ellipsoid): root body with freejoint

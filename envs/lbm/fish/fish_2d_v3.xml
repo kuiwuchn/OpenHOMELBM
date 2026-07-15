@@ -21,14 +21,14 @@
         <body name="root" pos="0 0 0.05">
             <joint name="free_xy" type="free"/>
 
-            <!-- 头部：圆形头部，流线型 -->
+            <!-- Streamlined round head. -->
             <geom name="head_geom" type="capsule"
                   fromto="0 0 0  0 -0.1 0"
                   size="0.04"
                   material="head"
                   density="500"/>
 
-            <!-- 身体中段 -->
+            <!-- Mid-body. -->
             <body name="body" pos="0 -0.1 0">
                 <joint name="joint1" type="hinge" axis="0 0 1" range="-45 45"/>
                 
@@ -38,18 +38,18 @@
                       material="body"
                       density="500"/>
 
-                <!-- 尾部：尾柄 + 宽尾鳍，LBM中会合并为凸包形成锥形 -->
+                <!-- Tail peduncle and wide fin form one LBM convex hull. -->
                 <body name="tail" pos="0 -0.1 0">
                     <joint name="joint2" type="hinge" axis="0 0 1" range="-60 60"/>
 
-                    <!-- 尾柄：细长连接段 -->
+                    <!-- Slender tail peduncle. -->
                     <geom name="tail_stem" type="capsule"
                           fromto="0 0 0  0 -0.08 0"
                           size="0.02"
                           material="tail"
                           density="500"/>
 
-                    <!-- 尾鳍：宽大的推水面 -->
+                    <!-- Wide propulsive tail fin. -->
                     <geom name="tail_fin" type="ellipsoid"
                           size="0.06 0.04 0.02"
                           pos="0 -0.1 0"

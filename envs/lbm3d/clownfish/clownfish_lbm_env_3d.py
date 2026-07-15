@@ -266,9 +266,9 @@ def compute_goal_reward_clownfish_kernel(
 
     current_dist_out[world_idx] = current_dist
     
-    """增加对动作的惩罚，鼓励更高效的运动"""
-    """沿目标方向的速度奖励 - 消耗的关节力矩 - 鱼头位姿惩罚 """
-    current_vel = wp.vec3(qvel[world_idx, 0], qvel[world_idx, 1], qvel[world_idx, 2])  # 线速度
+    """Penalize actions to encourage efficient motion."""
+    """Reward target velocity minus torque and head-pose penalties."""
+    current_vel = wp.vec3(qvel[world_idx, 0], qvel[world_idx, 1], qvel[world_idx, 2])  # Linear velocity.
     to_goal_vec = wp.vec3(goal_x - current_x, goal_y - current_y, goal_z - current_z)
     to_goal_dist = wp.length(to_goal_vec) + 1e-6  #
     to_goal_vel = wp.dot(current_vel, to_goal_vec / to_goal_dist)
@@ -289,7 +289,7 @@ def compute_goal_reward_clownfish_kernel(
     
     forward_penalty = 0.0
     if wp.dot(head_forward_vec, to_goal_vec) < 0.0:
-        forward_penalty = 0.05  # 鱼头朝向与目标相反时的惩罚
+        forward_penalty = 0.05  # Penalize facing away from the target.
 
     rewards_out[world_idx] += 0.1 * to_goal_vel - action_penalty - forward_penalty
 

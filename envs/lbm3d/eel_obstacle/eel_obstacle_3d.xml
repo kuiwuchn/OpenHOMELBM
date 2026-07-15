@@ -9,7 +9,7 @@
     </default>
     
     <asset>
-        <!-- 渐变色: 头部深色到尾部浅色 -->
+        <!-- Gradient from a dark head to a light tail. -->
         <material name="seg1_mat" rgba="0.15 0.15 0.4 1"/>
         <material name="seg2_mat" rgba="0.2 0.25 0.5 1"/>
         <material name="seg3_mat" rgba="0.25 0.35 0.55 1"/>
@@ -22,12 +22,12 @@
     </asset>
     
     <worldbody>
-        <!-- ========== 障碍物 (静态, 无joint) ========== -->
-        <!-- 位置: 鳗鱼起始点(0,0,0)到目标之间的路径上 -->
-        <!-- 在MuJoCo物理坐标中, Y方向偏移约 0.4m (对应LBM归一化 y≈0.62) -->
-        <!-- 障碍物是一个竖直的柱状体, 阻挡鳗鱼直线前进 -->
+        <!-- Static jointless obstacle. -->
+        <!-- Positioned between the eel start and target. -->
+        <!-- MuJoCo y offset is 0.4 m, near normalized LBM y=0.62. -->
+        <!-- The vertical pillar blocks a straight path. -->
         <body name="obstacle" pos="0.0 0.4 0.0">
-            <!-- 无joint = 固定在世界坐标系中, 不受力移动 -->
+            <!-- No joint keeps the obstacle fixed in world space. -->
             <geom name="obstacle_geom" type="box"
                   size="0.06 0.015 0.025"
                   pos="0 0 0"
@@ -36,24 +36,24 @@
                   contype="1" conaffinity="1"/>
         </body>
         
-        <!-- ========== 身体段1 (头部) ========== -->
-        <!-- Yaw+Roll版本: 每节都有 Yaw (左右) + Roll (滚转) 关节 -->
-        <!-- 8节身体, 7对关节 (14个关节总计) -->
+        <!-- Body segment 1: head. -->
+        <!-- Each link uses paired yaw and roll joints. -->
+        <!-- Eight segments use seven joint pairs. -->
         <body name="seg1" pos="0 0 0">
             <freejoint name="root_joint"/>
             
-            <!-- 竖直扁平长方体: 厚(X)=0.008, 长(Y)=0.06, 高(Z)=0.05 -->
+            <!-- Flat box: x=0.008, y=0.06, z=0.05. -->
             <geom name="seg1_geom" type="box"
                   size="0.004 0.03 0.025"
                   pos="0 0 0"
                   material="seg1_mat"
                   density="5000"/>
             
-            <!-- ========== 身体段2 ========== -->
+            <!-- Body segment 2. -->
             <body name="seg2" pos="0 -0.03 0">
-                <!-- Yaw关节: 绕Z轴, 水平摆动 -->
+                <!-- Yaw around z for lateral motion. -->
                 <joint name="joint1_yaw" type="hinge" axis="0 0 1" limited="true" range="-35 35"/>
-                <!-- Roll关节: 绕Y轴, 滚转 -->
+                <!-- Roll around y. -->
                 <joint name="joint1_roll" type="hinge" axis="0 1 0" limited="true" range="-30 30"/>
                 
                 <geom name="seg2_geom" type="box"
@@ -62,7 +62,7 @@
                       material="seg2_mat"
                       density="5000"/>
                 
-                <!-- ========== 身体段3 ========== -->
+                <!-- Body segment 3. -->
                 <body name="seg3" pos="0 -0.06 0">
                     <joint name="joint2_yaw" type="hinge" axis="0 0 1" limited="true" range="-35 35"/>
                     <joint name="joint2_roll" type="hinge" axis="0 1 0" limited="true" range="-30 30"/>
@@ -73,7 +73,7 @@
                           material="seg3_mat"
                           density="5000"/>
                     
-                    <!-- ========== 身体段4 ========== -->
+                    <!-- Body segment 4. -->
                     <body name="seg4" pos="0 -0.06 0">
                         <joint name="joint3_yaw" type="hinge" axis="0 0 1" limited="true" range="-40 40"/>
                         <joint name="joint3_roll" type="hinge" axis="0 1 0" limited="true" range="-35 35"/>
@@ -84,7 +84,7 @@
                               material="seg4_mat"
                               density="4500"/>
                         
-                        <!-- ========== 身体段5 ========== -->
+                        <!-- Body segment 5. -->
                         <body name="seg5" pos="0 -0.06 0">
                             <joint name="joint4_yaw" type="hinge" axis="0 0 1" limited="true" range="-40 40"/>
                             <joint name="joint4_roll" type="hinge" axis="0 1 0" limited="true" range="-35 35"/>
@@ -95,7 +95,7 @@
                                   material="seg5_mat"
                                   density="4000"/>
                             
-                            <!-- ========== 身体段6 ========== -->
+                            <!-- Body segment 6. -->
                             <body name="seg6" pos="0 -0.06 0">
                                 <joint name="joint5_yaw" type="hinge" axis="0 0 1" limited="true" range="-45 45"/>
                                 <joint name="joint5_roll" type="hinge" axis="0 1 0" limited="true" range="-40 40"/>
@@ -106,7 +106,7 @@
                                       material="seg6_mat"
                                       density="3500"/>
                                 
-                                <!-- ========== 身体段7 ========== -->
+                                <!-- Body segment 7. -->
                                 <body name="seg7" pos="0 -0.06 0">
                                     <joint name="joint6_yaw" type="hinge" axis="0 0 1" limited="true" range="-45 45"/>
                                     <joint name="joint6_roll" type="hinge" axis="0 1 0" limited="true" range="-40 40"/>
@@ -117,7 +117,7 @@
                                           material="seg7_mat"
                                           density="3000"/>
                                     
-                                    <!-- ========== 身体段8 (尾部) ========== -->
+                                    <!-- Body segment 8: tail. -->
                                     <body name="seg8" pos="0 -0.06 0">
                                         <joint name="joint7_yaw" type="hinge" axis="0 0 1" limited="true" range="-50 50"/>
                                         <joint name="joint7_roll" type="hinge" axis="0 1 0" limited="true" range="-45 45"/>
@@ -140,7 +140,7 @@
     </worldbody>
     
     <actuator>
-        <!-- 14个关节位置控制器 (7对 Yaw+Roll) -->
+        <!-- Fourteen position actuators for seven joint pairs. -->
         <position name="pos1_yaw" joint="joint1_yaw" kp="2.0" kv="0.2" ctrlrange="-0.873 0.873" forcerange="-1.0 1.0"/>
         <position name="pos1_roll" joint="joint1_roll" kp="2.0" kv="0.2" ctrlrange="-0.785 0.785" forcerange="-1.0 1.0"/>
         

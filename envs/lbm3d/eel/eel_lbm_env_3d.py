@@ -2,29 +2,29 @@
 3D Eel/Ribbon Fish LBM Environment for MuJoCo Warp with nworld support
 Multi-goal version: robot navigates to goal points in 3D space
 
-带鱼/鳗鱼机器人环境 - 基于LBM流体仿真 (Yaw+Roll双关节版本)
-结构:
-- 12节锥形身体 (头部较窄，中部最宽，尾部最细)
-- 22个关节 (11对 Yaw + Roll):
-  - Yaw关节 (绕Z轴): 水平摆动，水平行波推进
-  - Roll关节 (绕Y轴): 滚转
+LBM environment for an eel or ribbon-fish robot with paired yaw and roll joints.
+Structure:
+- 12 tapered body segments
+- 22 joints in 11 yaw-roll pairs
+  - Yaw around z drives horizontal traveling waves.
+  - Roll around y controls body roll.
 
-控制模式 (control_mode):
-1. 'direct' (默认): 直接控制11个Yaw关节角度
-   - Action: (nworld, 11) normalized [-1, 1] -> 目标角度
+Control modes:
+1. ``direct`` controls 11 yaw target angles.
+   - Action: normalized array shaped (nworld, 11).
 
-2. 'multi_sine': 多频率正弦波控制 (频域PD控制)
-   - Action: (nworld, 11*K*2) 包含振幅A和相位C参数
-   - 公式: θ_i* = Σ_{j=1}^{K} A_{ij} * sin(π/2 * B_j * t + C_{ij})
-   - B_j = j * B_bar / K 为频率系数
-   - Agent 学习 A 和 C 参数，实现更自然的波动控制
+2. ``multi_sine`` provides frequency-domain PD control.
+   - Action: amplitude A and phase C, shaped (nworld, 11*K*2).
+   - Formula: θ_i* = Σ A_ij * sin(π/2 * B_j * t + C_ij).
+   - Frequency factor: B_j = j * B_bar / K.
+   - The agent learns A and C for smooth undulation.
 
-特点:
-- 典型的鳗鱼式行波游动 (anguilliform locomotion)
-- 支持3D空间任意方向游动
-- 从头到尾振幅递增
-- 高效的波动推进
-- 头部朝向目标奖励 + 有效推力增强奖励
+Features:
+- Anguilliform traveling-wave locomotion
+- Full 3D navigation
+- Increasing head-to-tail amplitude
+- Efficient undulatory propulsion
+- Heading and effective-thrust rewards
 """
 
 import gym
@@ -282,12 +282,12 @@ def compute_smooth_reward_eel_kernel(
     3. Traveling wave reward: encourage phase difference between adjacent YAW joints ONLY
 
     Joint layout (22 joints = 11 pairs of Yaw+Roll):
-    - action[0]:  joint1_yaw  (seg1-seg2)   <- head, 参与行波
+    - action[0]:  joint1_yaw  (seg1-seg2)   <- head, wave joint
     - action[1]:  joint1_roll
-    - action[2]:  joint2_yaw  (seg2-seg3)   <- 参与行波
+    - action[2]:  joint2_yaw  (seg2-seg3)   <- wave joint
     - action[3]:  joint2_roll
     - ...
-    - action[20]: joint11_yaw (seg11-seg12) <- tail, 参与行波
+    - action[20]: joint11_yaw (seg11-seg12) <- tail, wave joint
     - action[21]: joint11_roll
 
     Yaw joints: even indices 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20  (11 yaw joints)
@@ -573,8 +573,8 @@ class Eel3DLBMEnv(LBMFluidEnv3D):
     """
     3D Eel/Ribbon Fish swimming environment with LBM fluid simulation.
     
-    带鱼/鳗鱼机器人，采用典型的行波推进 (anguilliform locomotion)。
-    双关节版本，支持3D空间任意方向游动。
+    Uses anguilliform traveling-wave propulsion with paired joints.
+    Supports movement in any 3D direction.
     
     Structure:
     - 8 body segments (seg1 ~ seg8): flat ribbon-like boxes

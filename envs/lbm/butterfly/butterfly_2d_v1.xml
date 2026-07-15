@@ -15,36 +15,36 @@
     <asset>
         <texture name="texplane" type="2d" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.15 0.2" width="512" height="512"/>
         <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
-        <material name="segment1" rgba="1.0 0.2 0.2 1"/>  <!-- 红色 -->
-        <material name="segment2" rgba="0.2 1.0 0.2 1"/>  <!-- 绿色 -->
-        <material name="segment3" rgba="0.2 0.2 1.0 1"/>  <!-- 蓝色 -->
+        <material name="segment1" rgba="1.0 0.2 0.2 1"/>  <!-- Red. -->
+        <material name="segment2" rgba="0.2 1.0 0.2 1"/>  <!-- Green. -->
+        <material name="segment3" rgba="0.2 0.2 1.0 1"/>  <!-- Blue. -->
     </asset>
 
     <worldbody>
-        <!-- 地面平面 -->
+        <!-- Ground plane. -->
         <geom name="floor" pos="0 0 0" size="5 5 0.1" type="plane" material="matplane" friction="0.0 0.000 0.0000"/>
         
-        <!-- 光源 -->
+        <!-- Light source. -->
         <light directional="true" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2" pos="0 0 5" dir="0 0 -1"/>
 
-        <!-- 中心方块（身体） - 翅膀向内偏移，无空隙 -->
+        <!-- Center body with inward-offset wings. -->
         <body name="center" pos="0 0 0.55">
-            <!-- 自由关节允许在空间中移动和旋转 -->
+            <!-- The free joint allows translation and rotation. -->
             <joint name="center_free" type="free" damping="0.0" stiffness="0" armature="0.0"/>
             
-            <!-- 中心方块 -->
+            <!-- Center block. -->
             <geom name="center_body" type="box" size="0.05 0.05 0.05" material="segment3" density="40000000"/>
             
-            <!-- 左翼（铰链在边缘，翅膀向内偏移） -->
+            <!-- Left wing hinged at the edge. -->
             <body name="left_wing" pos="-0.344 0 0">
-                <!-- 铰链位置在中心方块左边缘 -->
+                <!-- Hinge at the center block's left edge. -->
                 <joint name="joint_left" type="hinge" pos="0.344 0 0" axis="0 0 1" range="-60 60" damping="0.001" stiffness="0" armature="0.0"/>
                 <geom name="left_wing_geom" type="box" size="0.3 0.025 0.05" material="segment1" density="100000"/>
             </body>
             
-            <!-- 右翼（铰链在边缘，翅膀向内偏移） -->
+            <!-- Right wing hinged at the edge. -->
             <body name="right_wing" pos="0.344 0 0">
-                <!-- 铰链位置在中心方块右边缘 -->
+                <!-- Hinge at the center block's right edge. -->
                 <joint name="joint_right" type="hinge" pos="-0.344 0 0" axis="0 0 1" range="-60 60" damping="0.001" stiffness="0" armature="0.0"/>
                 <geom name="right_wing_geom" type="box" size="0.3 0.025 0.05" material="segment2" density="100000"/>
             </body>
@@ -52,7 +52,7 @@
     </worldbody>
 
     <actuator>
-        <!-- 控制每个关节的电机 -->
+        <!-- Joint motors. -->
         <motor name="motor_left" joint="joint_left" gear="0.2"/>
         <motor name="motor_right" joint="joint_right" gear="0.2"/>
     </actuator>

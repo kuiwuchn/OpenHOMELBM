@@ -25,7 +25,8 @@
     "per_frame_steps": 5,
     "flow": {
       "initial_velocity": [0.08, 0.0, 0.0],
-      "viscosity": 0.00768,
+      "viscosity": 0.0048,
+
 
 
 

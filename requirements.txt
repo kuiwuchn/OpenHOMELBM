@@ -12,3 +12,5 @@ tqdm
 pyvista 
 imageio 
 imageio-ffmpeg
+stable-baselines3
+gymnasium

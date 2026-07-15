@@ -15,3 +15,4 @@ envs/lbm/fish/__pycache__/fish_lbm_env.cpython-311.pyc
 envs/lbm/fish/__pycache__/fish_obstacle_lbm_env.cpython-311.pyc
 envs/lbm/starfish/__pycache__/__init__.cpython-311.pyc
 envs/lbm/starfish/__pycache__/starfish_lbm_env.cpython-311.pyc
+outputs/sac_minimal/*

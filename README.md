@@ -29,6 +29,25 @@ pip install -r requirements.txt
 
 ## Run Commands
 
+### Train the 2D eel with SAC-controlled CPG parameters
+
+The CPG mode makes SAC output four normalized parameters—wave amplitude, frequency,
+spatial phase lag, and head bias—and expands them into a traveling wave over the five
+eel joints. The oscillator phase and current CPG parameters are appended to the policy
+observation.
+
+```powershell
+python train_sac_minimal.py --animal eel --control-mode cpg --per-frame-steps 4 --cpg-hold-steps 10 --warmup-steps 10 --total-steps 20000
+```
+
+Use `--render` only for short visual checks; headless training is faster. The model and
+the physical CPG parameter ranges used for training are saved under
+`outputs/sac_minimal/` as `sac_eel2d_cpg.zip` and `sac_eel2d_cpg_config.json`.
+In CPG render mode, the right panel shows executed versus SAC-target parameters, the
+five generated motor commands over one cycle, and the actual coupled body centerline
+read from the LBM solid positions. One SAC action is held for 10 low-level control
+steps by default; their rewards are accumulated into one SAC transition.
+
 ### Run the 2D realtime LBM controller:
 
 ```powershell

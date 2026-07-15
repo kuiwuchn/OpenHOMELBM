@@ -1,0 +1,62 @@
+<mujoco model="Eel2D_Swimmer">
+
+    <compiler angle="degree" inertiafromgeom="true"/>
+    <option timestep="0.01" gravity="0 0 0" integrator="RK4"/>
+
+    <default>
+        <joint damping="0.04" stiffness="0" armature="0.01"/>
+        <motor ctrlrange="-1 1" ctrllimited="true"/>
+        <geom solref="0.001 1" solimp="0.9 0.95 0.001"/>
+    </default>
+
+    <asset>
+        <material name="eel_head" rgba="0.16 0.52 0.78 1"/>
+        <material name="eel_body" rgba="0.25 0.72 0.92 1"/>
+        <material name="eel_tail" rgba="0.55 0.95 1.00 1"/>
+    </asset>
+
+    <worldbody>
+        <geom type="plane" size="5 5 0.1" rgba="0.1 0.1 0.1 1" pos="0 0 0"/>
+
+        <body name="seg1" pos="0 0 0.05">
+            <joint name="free_xy" type="free"/>
+            <geom name="seg1_geom" type="capsule" fromto="0 0 0  0 -0.09 0" size="0.035" material="eel_head" density="450"/>
+
+            <body name="seg2" pos="0 -0.09 0">
+                <joint name="joint1" type="hinge" axis="0 0 1" range="-50 50"/>
+                <geom name="seg2_geom" type="capsule" fromto="0 0 0  0 -0.09 0" size="0.034" material="eel_body" density="450"/>
+
+                <body name="seg3" pos="0 -0.09 0">
+                    <joint name="joint2" type="hinge" axis="0 0 1" range="-55 55"/>
+                    <geom name="seg3_geom" type="capsule" fromto="0 0 0  0 -0.09 0" size="0.032" material="eel_body" density="450"/>
+
+                    <body name="seg4" pos="0 -0.09 0">
+                        <joint name="joint3" type="hinge" axis="0 0 1" range="-60 60"/>
+                        <geom name="seg4_geom" type="capsule" fromto="0 0 0  0 -0.09 0" size="0.029" material="eel_body" density="450"/>
+
+                        <body name="seg5" pos="0 -0.09 0">
+                            <joint name="joint4" type="hinge" axis="0 0 1" range="-65 65"/>
+                            <geom name="seg5_geom" type="capsule" fromto="0 0 0  0 -0.09 0" size="0.025" material="eel_body" density="450"/>
+
+                            <body name="seg6" pos="0 -0.09 0">
+                                <joint name="joint5" type="hinge" axis="0 0 1" range="-70 70"/>
+                                <geom name="seg6_geom" type="capsule" fromto="0 0 0  0 -0.10 0" size="0.020" material="eel_tail" density="450"/>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+
+        <light directional="true" diffuse="0.9 0.9 0.9" pos="0 0 5" dir="0 0 -1"/>
+    </worldbody>
+
+    <actuator>
+        <motor joint="joint1" gear="0.12"/>
+        <motor joint="joint2" gear="0.14"/>
+        <motor joint="joint3" gear="0.16"/>
+        <motor joint="joint4" gear="0.18"/>
+        <motor joint="joint5" gear="0.20"/>
+    </actuator>
+
+</mujoco>

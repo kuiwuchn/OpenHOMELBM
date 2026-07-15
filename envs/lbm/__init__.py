@@ -14,7 +14,9 @@ __all__ = [
     'ButterflyLBMEnv',
     'FishLBMEnv',
     'FishObstacleLBMEnv',
+    'Eel2DLBMEnv',
     'StarfishLBMEnv',
+
     'LBM_Solver',
     'HomeFlow',
 ]

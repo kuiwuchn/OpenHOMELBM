@@ -5,8 +5,9 @@ import mujoco
 import mujoco_warp as mjw
 import warp as wp
 from .lbm_solver import LBM_Solver
-from .lbm_func import get_u_img
+from .lbm_func import get_u_img, precompute_transformed_segments
 from typing import Optional, Tuple, Dict, Any, List
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .lbm_fluid_env_func import *
 
@@ -269,8 +270,24 @@ class LBMFluidEnv(gym.Env):
         # Finalize mappings and create Warp arrays
         solid_ids_list = [cfg["solid_id"] for cfg in self.solid_config]
         self.solver.finalize_mappings(solid_ids_list)
+        self._precompute_initial_solid_boundary()
+
+    def _precompute_initial_solid_boundary(self) -> None:
+        """Build transformed solid boundary at reset time with zero initial boundary velocity."""
+        wp.launch(
+            precompute_transformed_segments,
+            dim=(
+                self.solver.nworld,
+                self.solver.flows[0].n_objects,
+                self.solver.flows[0].max_segments_per_object,
+            ),
+            inputs=[self.solver.flows_wp],
+            device=self.solver.device,
+        )
+        wp.synchronize()
 
     def partial_reset(self, reset_mask: np.ndarray) -> np.ndarray:
+
         """
         Reset only specific worlds indicated by reset_mask.
         This is called when some environments terminate during training.

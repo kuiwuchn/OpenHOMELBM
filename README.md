@@ -101,6 +101,29 @@ Important JSON fields:
 
 
 
+### Run the realtime 3D LBM slice controller
+
+```powershell
+python tools\lbm3d_realtime_control.py --config configs\realtime_3d\eel3d.json --preset forward --view-mode orbit
+```
+
+Live `orbit` mode computes signed vorticity slices on CUDA and transfers the RGBA
+atlas directly to OpenGL. The default view uses 15 full-resolution transparent
+`z` slices, a top-left LBM status overlay, and a right-side action panel for
+`A`, `omega`, `k_wave`, `head_bias`, and `roll`. Realtime preview defaults to two
+coupled substeps per displayed frame; pass `--per-frame-steps 10` to use the JSON
+export cadence at a lower display FPS.
+
+Drag the left view to orbit the camera and use the mouse wheel to zoom. Drag any
+right-side action bar to enter manual override and set that action in `[-1, 1]`;
+the other actions keep their current values. Pressing a preset key exits manual
+override: `W` forward, `A` left, `D` right, `F` fast, `S` idle, and `Z`/`C`
+vertical control. `Space` pauses, `R` resets, and `Q` or `Esc` quits.
+
+Useful live-view options include `--action-panel-width`, `--orbit-zoom`,
+`--orbit-show-box`, and `--orbit-with-mujoco` (replace the action panel with a
+MuJoCo view).
+
 ### Export a 3D LBM rendering video. 
 
 

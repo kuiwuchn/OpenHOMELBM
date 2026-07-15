@@ -146,3 +146,33 @@ Fix #1 之后，**96% 的帧时间是核心 stream-collide kernel**（矩基/正
 进一步提速只剩两条路，都**不属于**"安全快赢"，需用户决策：
 - **A. 可调物理档位（会改结果）**：`per_frame_steps` 10→5（≈2×）、网格分辨率下调（≈线性）。适合 demo，需接受数值差异。
 - **B. LBM 存储方案重构（大改，需重验证）**：改存 27 个群体分布（two-lattice / AA-pattern），访存从 ~270→~54 次/格，理论 ~3–5× 潜力。理论上与当前矩重构在同一公式下数值等价，但跨如此重构做到逐比特一致极难保证，需大量回归验证。
+
+---
+
+## Fix #2 调查：kernel 融合（工程角度）——实测后判定不值得做
+
+用户要求从工程角度"把多个 kernel 合一"。逐项实测了 `lbm_solver.step()` 内部与整帧的融合上限：
+
+`lbm_solver.step()` 内部各 kernel（eel，nworld=1）：
+
+| kernel | 启动维度 | 耗时 | 占比 |
+|---|---|---|---|
+| `stream_and_collide_3d` | nworld×nx×ny×nz | **13.67 ms** | **96.6%** |
+| `apply_bc_3d` | nworld×nx×ny×nz | 0.244 ms | 1.7% |
+| `init_force_3d_batch` | nworld | 0.019 ms | — |
+| `Swap_Mom_3D` | nworld | 0.016 ms | — |
+
+整帧 CUDA graph 融合实测（把 10 个子步的全部耦合+LBM+MuJoCo kernel 录成**单个 graph** 回放）：
+
+| 方案 | 每帧 | 说明 |
+|---|---|---|
+| python 循环（现状，MuJoCo 用预捕获子图） | 153.4 ms | |
+| **单 graph 回放（全部 inline 后录制）** | **150.6 ms** | 融合上限，仅省 ~3 ms（**~2%**） |
+| python 循环但 `mjw.step` 不捕获直接调 | 295 ms | 反例：MuJoCo 不用 graph 会因启动开销暴涨 ~2× |
+
+**结论：融合不值得做。**
+- 96.6% 的帧是**单个** `stream_collide` kernel（本就一次启动），其余所有 kernel + 每子步 sync 合计仅 ~6 ms/帧，融合上限 ~2%。
+- 要拿到这 ~2% 必须把 `mujoco_warp` 的内部 kernel inline 进外层 capture 并重捕整个循环——跨 mjw 版本脆弱、且打乱现有干净的子图结构与 reset/partial_reset 路径。**为 ~2% 引入这种脆弱性属于糟糕的工程取舍，不做。**
+- 附带发现：`mjw.step` 若不走预捕获 graph，每帧从 153→295 ms。现有"MuJoCo 单步捕获成子图"已是正确做法，勿动。
+
+因此，在保结果一致的前提下，**Fix #1 已是安全优化的终点**；后续只剩前述 A（改物理档位）/ B（群体法重构）两条需权衡的路。

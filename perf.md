@@ -239,6 +239,65 @@ Fix #1 之后，**96% 的帧时间是核心 stream-collide kernel**（矩基/正
 
 **因此 Option C 也不构成"低风险高收益"的安全优化。** 在保结果一致的前提下，**Fix #1（3→6.3 FPS）确定为本轮优化的终点。** 进一步提速只能接受改物理（Option A：`per_frame_steps`/分辨率）或投入高风险的碰撞内核重构。
 
+> **⚠️ 上面"占用率是地板、无工程解"的结论是错的——见下方 Fix #2 的更正。** Fix #3 只测了"去 pop[27]"，没测"改循环结构 + 常量存储方式"，误判了根因。
+
+---
+
+## Fix #2：rolled-loop + 全局常量 D3Q27 —— **真正的突破（9.2×）**
+
+### 根因更正：不是占用率，是"自动展开 + 向量常量索引"导致的寄存器溢出
+
+用参考 kernel + 驱动 API 继续逼问后发现之前的诊断错了：
+
+1. **参考 kernel**：复刻 `stream_collide` 访存模式、去掉重计算的 `gather27` 只要 1.5 ms（11%），`copy10` 跑到 852 GB/s → 早已排除带宽。
+2. **决定性对比**（同一份 body，只改循环/常量结构）：
+
+| 变体 | 耗时 | local 溢出 | 说明 |
+|---|---|---|---|
+| 展开循环 + 向量常量（**原始**） | 12.4 ms | 760 B | Warp 把 `for i in range(27)` **自动展开**，过度流水 → 寄存器溢出 |
+| 运行时循环 + 向量常量 | 12.5 ms | 760 B | 动态索引 27 元素 `wp.vector` 常量 → 把整段向量塞进寄存器 → 溢出 |
+| **运行时循环 + 全局常量** | **0.86 ms** | **0 B** | 常量放全局内存，按 i 做 warp-uniform 缓存广播读 → 无溢出 |
+
+**结论**：`stream_collide` 从来不是"占用率受限"，而是 **register spill 打在热循环里**。两个根因叠加：(a) Warp 对 `range(27)` 字面量循环**自动展开**成 27 段直线代码，编译器过度流水导致 ~760 B 溢出；(b) 若改成运行时循环但仍用 `wp.vector` 常量，**动态索引会把整个 27 元素向量materialize进寄存器**，同样溢出。**同时做两件事**——运行时循环 + D3Q27 常量搬到全局内存——才能把溢出清零。
+
+### 实现（`lbm_core_3d.py` / `lbm_func_3d.py`）
+
+1. `HomeFlow3D` 增加全局常量字段 `n_dirs`、`lat_e`(27×vec3)、`lat_w`(27)、`lat_inv`(27)，在 `Initialize` 里从 D3Q27 常量填充。
+2. `stream_and_collide_3d` 改为**运行时循环** `for i in range(flow.n_dirs)`，用 `flow.lat_e[i]/lat_w[i]/lat_inv[i]` 查表；平衡态重建改用新的**标量入参**函数 `mlCalEquilibrium3D_s(...,dx,dy,dz,wi)`（与 `mlCalDistribution3D` 数值一致，只是不再按 i 索引向量常量）；cut-cell 分支同样改用全局常量。
+3. 宏观矩用增量累加器（升序 i 分组，见 Fix #3 论证）——**HOME 算法、平衡态、碰撞、边界完全不变**，仅浮点求和结合序变化。
+
+### 正确性验证（物理等价）
+
+| 检查 | 结果 |
+|---|---|
+| old-vs-new 单 kernel（同一输入）| max\|Δfield\|=**1.85e-6**，Δforce=6.0e-6，Δtorque=1.55e-5（float32 舍入级，在 atomic 噪声量级） |
+| 窄带 culling on/off（新 kernel）| 场 **逐比特一致**（Δ=0）——Fix #1 与新 kernel 正交组合仍精确 |
+| 全程仿真轨迹（同 seed/动作，40 步）| step10 差 1.5e-3 格、step20 差 6e-3 格，之后随混沌缓慢发散（0.27 格@step40）——与"两次运行因 atomic 次序产生的固有发散"同类，非系统性物理偏移 |
+
+即：**非逐比特**（rolled loop 必然改变求和结合序），但**物理等价**——同一 HOME 算法，差异 ~1e-6 低于仿真本身的 atomic 非确定性。这是任何对浮点归约做性能重构都无法避免的，且不改变算法。
+
+### Profiling — after（Fix #2）
+
+| 指标 | 原始 | Fix #1 | **Fix #2** |
+|---|---|---|---|
+| `stream_collide` | 24.3→13.67 ms | 13.67 ms | **1.48 ms**（对 pure-fluid 段 12.4→0.86，9–14×）|
+| `lbm_solver.step()` | 24.3 ms | 14.2 ms | **1.94 ms** |
+| `stream_collide` local 溢出 | — | 1360 B | 656 B |
+| full `env.step()` | 259 ms | 155 ms | **~32 ms** |
+| **无头 sim FPS** | 3.84 | 6.32 | **~31 FPS** |
+
+`--no-render` benchmark：`avg_step_ms 260→32`，稳态 `recent_fps ~31`。**达成并超过 20 FPS 目标**，且不动 HOME 算法、物理等价。此改动对**所有 3D 环境**（manta/tuna/turtle/clownfish/…）通用，因为它们共用 `stream_and_collide_3d`。
+
+复现：
+```
+python tools/lbm3d_realtime_control.py --config configs/realtime_3d/eel3d.json --no-render --benchmark-steps 80
+python tools/verify_narrowband_culling.py     # 窄带 culling 仍精确
+```
+
+### 教训
+- **诊断要测对变量**：Fix #3 只改了"去 pop[27]"这一个变量，误以为寄存器/占用率是地板；真正的杠杆是"循环结构 + 常量存储位置"。理论占用率（17%）在无溢出时完全够用。
+- Warp 对字面量 `range(N)` 会自动展开；大 N（27）的展开会引发严重寄存器溢出。运行时循环 + 全局常量是通用解法。
+
 ---
 
 ## Fix #2 调查：kernel 融合（工程角度）——实测后判定不值得做

@@ -113,6 +113,18 @@ class HomeFlow3D:
     # mesh ray queries can be safely skipped.
     solid_bound_radius: wp.array(dtype=wp.float32, ndim=1)
 
+    # D3Q27 lattice constants stored in GLOBAL memory (not register-resident
+    # wp.vector constants). This lets the stream/collide kernel iterate the 27
+    # directions with a runtime loop and index the constants by a runtime i via
+    # cheap, warp-uniform (broadcast) cached loads. The alternative — Warp's
+    # auto-unrolled loop over vector constants — over-pipelines into ~760 B of
+    # register spills and runs ~14x slower. Values are identical, so results are
+    # unchanged.
+    n_dirs: int
+    lat_e: wp.array(dtype=wp.vec3, ndim=1)     # (27,) lattice velocities (cx,cy,cz)
+    lat_w: wp.array(dtype=wp.float32, ndim=1)  # (27,) lattice weights
+    lat_inv: wp.array(dtype=wp.int32, ndim=1)  # (27,) opposite-direction indices
+
     # Render buffers
     u_img_xy: wp.array2d(dtype=wp.float32)  # XY plane (top-down view, z slice)
     u_img_xz: wp.array2d(dtype=wp.float32)  # YZ plane (side view from right, x slice)  
@@ -193,6 +205,13 @@ class HomeFlow3D:
         # A margin is added at query time; a radius of 0 restricts the narrow
         # band to the immediate neighborhood of solid_position.
         self.solid_bound_radius = wp.zeros((n_objects,), dtype=wp.float32)
+
+        # D3Q27 lattice constants in global memory (see struct comment).
+        self.n_dirs = 27
+        _e = np.array([[cx_d3q27[i], cy_d3q27[i], cz_d3q27[i]] for i in range(27)], dtype=np.float32)
+        self.lat_e = wp.array(_e, dtype=wp.vec3)
+        self.lat_w = wp.array(np.array([w_d3q27[i] for i in range(27)], dtype=np.float32), dtype=wp.float32)
+        self.lat_inv = wp.array(np.array([indexd3q27Inv[i] for i in range(27)], dtype=np.int32), dtype=wp.int32)
 
         # Render buffers
         self.u_img_xy = wp.zeros((nx, ny), dtype=wp.float32)  # XY plane slice (top-down view)

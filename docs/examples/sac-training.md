@@ -31,6 +31,11 @@ The training artifacts are written under `outputs/sac_minimal/` as
 `sac_eel2d_forward_cpg.zip` and `sac_eel2d_forward_cpg_config.json`. The saved
 JSON records the physical CPG parameter ranges used alongside the policy archive.
 
+![Pretrained SAC forward policy evaluated in the projected eel environment](../assets/demos/sac-forward.jpg)
+
+*The checked-in policy is evaluated without a target point; the overlay reports
+forward-task reward, accumulated return, simulation steps, and playback speed.*
+
 ## Export from an existing trained policy
 
 Use `--load-model` with any compatible Stable-Baselines3 ZIP, then combine

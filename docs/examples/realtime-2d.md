@@ -25,6 +25,11 @@ This configuration projects the articulated 3D eel model into twelve planar
 immersed boundaries. The right panel exposes the traveling-wave control
 parameters; MuJoCo continues to evolve the full 3D articulated state.
 
+![Projected articulated eel and its planar vorticity wake](../assets/demos/eel2d.jpg)
+
+*The rigid bodies remain three-dimensional while the immersed boundary and
+fluid field are projected onto the D2Q9 plane.*
+
 ## Kármán vortex street
 
 ```powershell
@@ -36,6 +41,11 @@ the LBM plane. It uses a uniform inlet plus small perturbations to break the
 symmetric wake. The
 live panel reports Reynolds number; `+` and `-` adjust it, while `W`, `A`, `S`,
 and `D` move the projected cylinder boundary in LBM space.
+
+![Alternating Kármán vortex street behind the projected cylinder](../assets/demos/karman2d.jpg)
+
+*Signed vorticity highlights the alternating wake; the right panel reports the
+live Reynolds-number settings.*
 
 Record the same scene:
 

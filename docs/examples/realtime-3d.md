@@ -22,6 +22,11 @@ at zero; the realtime demo has no ascend/descend presets.
 The checked-in `fast` preset stays below the normalized parameter limits to
 leave numerical headroom during long interactive runs.
 
+![Articulated eel inside transparent three-dimensional vorticity slices](../assets/demos/eel3d-vorticity.jpg)
+
+*The orbit renderer stacks signed-vorticity slices around the MuJoCo eel while
+the coupled simulation advances on CUDA.*
+
 ## Export vorticity slices
 
 ```powershell

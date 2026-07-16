@@ -6,6 +6,11 @@ its 3D mode couples their meshes directly to a D3Q27 fluid domain. Both modes
 support interactive flow visualization, aquatic locomotion control, and
 reinforcement-learning experiments.
 
+![Alternating two-dimensional Karman wake behind a projected cylinder](assets/demos/karman2d.jpg)
+
+***2D Kármán wake.** A three-dimensional MuJoCo cylinder is projected into the
+D2Q9 flow while signed vorticity reveals the alternating vortex street.*
+
 ## Choose a starting point
 
 | Goal | Start here |

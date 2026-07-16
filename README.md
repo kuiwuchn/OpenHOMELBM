@@ -8,15 +8,9 @@
 LBM-RIGID is a GPU-oriented research simulator for coupling lattice-Boltzmann
 fluid dynamics with three-dimensional MuJoCo-Warp rigid bodies. It supports a
 projected D2Q9 workflow for fast 2D experiments, a mesh-coupled D3Q27 solver for
-3D flow, realtime visualization, and reinforcement-learning control of an
-articulated eel.
-
-The repository provides Python environments, JSON-configured demos, exported
-videos, a pretrained SAC forward policy, and an MkDocs + mkdocstrings site.
+3D flow, realtime visualization, and reinforcement-learning control.
 
 ## Demo gallery
-
-Click a screenshot to open the corresponding checked-in MP4.
 
 | Projected 2D eel | 3D eel vorticity slices |
 | :---: | :---: |
@@ -39,9 +33,7 @@ Click a screenshot to open the corresponding checked-in MP4.
 - **Realtime tools:** 2D field views, orbiting 3D vorticity slices, keyboard
   presets, recording, and live Reynolds-number control for Kármán scenes.
 - **Reinforcement learning:** Stable-Baselines3 SAC training with four-parameter
-  planar eel CPG control and a checked-in forward policy.
-- **Documented Python surface:** curated API pages built with MkDocs and
-  mkdocstrings.
+  planar eel CPG control.
 
 ## Prerequisites
 
@@ -117,9 +109,8 @@ python train_sac_minimal.py `
   --total-steps 10000
 ```
 
-This task rewards displacement along the eel's initial heading while penalizing
-lateral drift and heading error. It does not sample or render a target point.
-Add `--render` for a short visual check; headless training is faster.
+This command trains the eel on the forward task. Add `--render` for a short
+visual check.
 
 ## Checked-in configurations
 
@@ -131,8 +122,7 @@ Add `--render` for a short visual check; headless training is faster.
 | [`configs/realtime_3d/karman3d.json`](configs/realtime_3d/karman3d.json) | Static cylinder in a D3Q27 domain |
 
 The JSON files define model paths, lattice resolution, coupling substeps, flow
-parameters, rendering options, and realtime controls. Keep paths relative to the
-repository root when adding new scenes.
+parameters, rendering options, and realtime controls.
 
 ## Python API
 

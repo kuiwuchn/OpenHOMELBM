@@ -7,7 +7,7 @@ Run with realtime LBM rendering and right-side SAC panel:
     python train_sac_minimal.py --render --warmup-steps 50 --viscosity 0.05
 
 Run projected 2D eel training with SAC controlling four planar parameters:
-    python train_sac_minimal.py --animal eel --control-mode cpg --per-frame-steps 8 --cpg-ramp-steps 10 --cpg-hold-steps 30
+    python train_sac_minimal.py --animal eel --control-mode cpg --per-frame-steps 8 --cpg-ramp-steps 10 --cpg-hold-steps 60
 
 
 
@@ -19,7 +19,6 @@ Run without rendering:
 
 import argparse
 import json
-import math
 from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -134,8 +133,8 @@ class EelCPGWrapper(gym.Env):
     metadata = {"render_modes": []}
 
     PARAMETER_NAMES = ("A", "omega", "k_wave", "head_bias")
-    PARAMETER_LOW = np.array([0.10, -1.0, 0.30, -0.20], dtype=np.float32)
-    PARAMETER_HIGH = np.array([0.60, 1.0, 0.90, 0.20], dtype=np.float32)
+    PARAMETER_LOW = np.array([0.10, -1.0, 0.30, -0.30], dtype=np.float32)
+    PARAMETER_HIGH = np.array([0.60, -0.3, 0.90, 0.30], dtype=np.float32)
     DEFAULT_PARAMETERS = np.array([0.36, -1.0, 0.65, 0.0], dtype=np.float32)
     OMEGA_MAX = 5.0 * np.pi
     K_MAX = 1.5
@@ -147,7 +146,7 @@ class EelCPGWrapper(gym.Env):
         env: SingleEnvWrapper,
         smoothing: float = 1.0,
         parameter_ramp_steps: int = 10,
-        parameter_hold_steps: int = 30,
+        parameter_hold_steps: int = 60,
     ):
         super().__init__()
         self.env = env
@@ -372,82 +371,33 @@ class EelCPGWrapper(gym.Env):
     def close(self):
         self.env.close()
 
-
-def load_cpg_warmup_seed(
-    cpg_env: EelCPGWrapper,
-    config_path: Optional[Path],
-) -> Tuple[np.ndarray, np.ndarray, Optional[str]]:
-    """Load physical seed parameters from a scan JSON and normalize for SAC."""
-    parameters = cpg_env.DEFAULT_PARAMETERS.copy()
-    source = None
-    if config_path is not None and config_path.exists():
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-        scan_is_valid = payload.get("status") == "ok" and payload.get("best") is not None
-        best = payload.get("best", {}) if scan_is_valid else {}
-        if not scan_is_valid:
-            print(
-                f"[CPG warmup] Ignoring invalid/legacy scan JSON: {config_path}. "
-                "Run the steady-COM scanner before training."
-            )
-        elif all(key in best for key in ("A", "omega", "k_wave")):
-            parameters = np.array(
-                [
-                    best["A"],
-                    best["omega"],
-                    best["k_wave"],
-                    0.0,
-                ],
-                dtype=np.float32,
-            )
-            source = str(config_path)
-        elif scan_is_valid:
-            print(
-                f"[CPG warmup] Ignoring scan with legacy 5-motor parameters: {config_path}. "
-                "Projected eel scans must provide A, omega and k_wave."
-            )
-    parameters = np.clip(parameters, cpg_env.PARAMETER_LOW, cpg_env.PARAMETER_HIGH)
-    parameters[3] = 0.0
-    return cpg_env._parameters_to_normalized(parameters), parameters, source
-
-
 class CPGWarmupSAC(SAC):
-    """SAC with OU-correlated CPG actions only during replay-buffer warm-up."""
+    """SAC with range-limited random CPG actions during replay-buffer warm-up."""
 
     def __init__(
         self,
         *args,
-        warmup_mean: np.ndarray,
-        ou_theta: float = 0.15,
-        ou_sigma: np.ndarray,
-        ou_dt: float = 1.0,
-        ou_seed: Optional[int] = None,
+        warmup_low: np.ndarray,
+        warmup_high: np.ndarray,
+        warmup_seed: Optional[int] = None,
         **kwargs,
     ):
-        self.cpg_warmup_mean = np.asarray(warmup_mean, dtype=np.float32).reshape(-1)
-        self.cpg_ou_theta = float(ou_theta)
-        self.cpg_ou_sigma = np.asarray(ou_sigma, dtype=np.float32).reshape(-1)
-        if self.cpg_ou_sigma.shape != self.cpg_warmup_mean.shape:
-            raise ValueError("OU sigma must have one value per CPG action dimension")
-        self.cpg_ou_dt = float(ou_dt)
-        self.cpg_ou_rng = np.random.default_rng(ou_seed)
-        self.cpg_ou_state: Optional[np.ndarray] = None
+        self.cpg_warmup_low = np.asarray(warmup_low, dtype=np.float32).reshape(-1)
+        self.cpg_warmup_high = np.asarray(warmup_high, dtype=np.float32).reshape(-1)
+        if self.cpg_warmup_low.shape != self.cpg_warmup_high.shape:
+            raise ValueError("Random warm-up bounds must have matching shapes")
+        if np.any(self.cpg_warmup_low > self.cpg_warmup_high):
+            raise ValueError("Random warm-up lower bounds must not exceed upper bounds")
+        self.cpg_warmup_rng = np.random.default_rng(warmup_seed)
         super().__init__(*args, **kwargs)
 
     def _sample_action(self, learning_starts: int, action_noise=None, n_envs: int = 1):
         if self.num_timesteps < learning_starts:
-            if self.cpg_ou_state is None or self.cpg_ou_state.shape[0] != n_envs:
-                self.cpg_ou_state = np.repeat(
-                    self.cpg_warmup_mean[None, :], n_envs, axis=0
-                ).astype(np.float32)
-            noise = self.cpg_ou_rng.normal(size=self.cpg_ou_state.shape).astype(np.float32)
-            mean = self.cpg_warmup_mean[None, :]
-            sigma = self.cpg_ou_sigma[None, :]
-            self.cpg_ou_state += (
-                self.cpg_ou_theta * (mean - self.cpg_ou_state) * self.cpg_ou_dt
-                + sigma * math.sqrt(self.cpg_ou_dt) * noise
-            )
-            self.cpg_ou_state = np.clip(self.cpg_ou_state, -1.0, 1.0)
-            scaled_action = self.cpg_ou_state.copy()
+            scaled_action = self.cpg_warmup_rng.uniform(
+                self.cpg_warmup_low,
+                self.cpg_warmup_high,
+                size=(n_envs, self.cpg_warmup_low.size),
+            ).astype(np.float32)
             action = self.policy.unscale_action(scaled_action)
             return action, scaled_action
         return super()._sample_action(learning_starts, action_noise, n_envs)
@@ -497,6 +447,8 @@ def vorticity_frame(raw_env: FishLBMEnv, height: int = 600, vorticity_vmax: floa
 
 def draw_target_marker(frame: np.ndarray, raw_env: FishLBMEnv) -> None:
     """Overlay the current eel goal in the same coordinates as the LBM image."""
+    if getattr(raw_env, "task_mode", "goal") != "goal":
+        return
     targets = getattr(raw_env, "target_positions_lbm", None)
     if targets is None or len(targets) == 0:
         return
@@ -1024,11 +976,163 @@ class RealtimeLBMCallback(BaseCallback):
         cv2.destroyWindow(self.window)
 
 
+class LBMVideoRecorder:
+    """Record only the LBM view with compact policy-evaluation annotations."""
+
+    def __init__(
+        self,
+        raw_env: FishLBMEnv,
+        cpg_env: EelCPGWrapper,
+        output_path: Path,
+        height: int,
+        vorticity_vmax: float,
+        playback_speed: float,
+        frame_stride: int,
+    ):
+        self.raw_env = raw_env
+        self.cpg_env = cpg_env
+        self.output_path = output_path
+        self.height = int(height)
+        self.vorticity_vmax = float(vorticity_vmax)
+        self.playback_speed = float(playback_speed)
+        self.frame_stride = max(1, int(frame_stride))
+        self.output_fps = self.playback_speed / (
+            self.cpg_env.control_dt * self.frame_stride
+        )
+        self.writer: Optional[cv2.VideoWriter] = None
+        self.episode = 0
+        self.total_reward = 0.0
+        self.frame_count = 0
+
+    def begin_episode(self, episode: int) -> None:
+        self.episode = int(episode)
+        self.total_reward = 0.0
+
+    def _annotate(self, frame: np.ndarray, reward: float) -> None:
+        height, width = frame.shape[:2]
+        band_height = min(118, height)
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (width, band_height), (8, 12, 20), -1)
+        cv2.addWeighted(overlay, 0.68, frame, 0.32, 0.0, dst=frame)
+
+        white = (245, 248, 252)
+        green = (100, 255, 140)
+        cv2.putText(
+            frame, "Task: Forward", (12, 27), cv2.FONT_HERSHEY_SIMPLEX,
+            0.62, white, 2, cv2.LINE_AA,
+        )
+        arrow_x = min(width - 18, 176)
+        cv2.arrowedLine(
+            frame, (arrow_x, 30), (arrow_x, 7), green, 2, cv2.LINE_AA,
+            tipLength=0.35,
+        )
+        cv2.putText(
+            frame, f"Reward: {reward:+.4f}", (12, 56),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.55, white, 1, cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame, f"Total Reward: {self.total_reward:+.4f}", (12, 82),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.55, white, 1, cv2.LINE_AA,
+        )
+        simulation_step = int(np.asarray(self.raw_env.current_steps).reshape(-1)[0])
+        cv2.putText(
+            frame, f"Sim Step: {simulation_step}", (12, 108),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.55, white, 1, cv2.LINE_AA,
+        )
+        speed_text = f"Speed: {self.playback_speed:g}x"
+        text_width = cv2.getTextSize(
+            speed_text, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1
+        )[0][0]
+        cv2.putText(
+            frame, speed_text, (max(12, width - text_width - 12), 108),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.55, green, 1, cv2.LINE_AA,
+        )
+
+    def record(self, reward: float) -> bool:
+        self.total_reward += float(reward)
+        frame = vorticity_frame(self.raw_env, self.height, self.vorticity_vmax)
+        self._annotate(frame, float(reward))
+        if self.writer is None:
+            self.output_path.parent.mkdir(parents=True, exist_ok=True)
+            height, width = frame.shape[:2]
+            self.writer = cv2.VideoWriter(
+                str(self.output_path),
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                self.output_fps,
+                (width, height),
+            )
+            if not self.writer.isOpened():
+                raise RuntimeError(f"Could not open video writer: {self.output_path}")
+        self.writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        self.frame_count += 1
+        return True
+
+    def close(self) -> None:
+        if self.writer is not None:
+            self.writer.release()
+            self.writer = None
+        print(
+            f"Video saved: {self.output_path} "
+            f"({self.frame_count} frames, {self.output_fps:.2f} fps)"
+        )
 
 
+def evaluate_loaded_policy(
+    model: SAC,
+    env: gym.Env,
+    renderer: Optional[RealtimeLBMCallback],
+    video_recorder: Optional[LBMVideoRecorder],
+    episodes: int,
+    seed: int,
+    deterministic: bool,
+) -> None:
+    """Run a loaded policy without gradient updates or checkpoint writes."""
+    if renderer is not None:
+        renderer.init_callback(model)
+        renderer.on_training_start({}, {})
 
+    stop_requested = False
+    try:
+        for episode in range(max(1, int(episodes))):
+            observation, _ = env.reset(seed=seed + episode)
+            if video_recorder is not None:
+                video_recorder.begin_episode(episode + 1)
+            episode_return = 0.0
+            episode_length = 0
+            terminated = False
+            truncated = False
+            info: Dict[str, Any] = {}
 
+            while not (terminated or truncated or stop_requested):
+                action, _ = model.predict(observation, deterministic=deterministic)
+                if renderer is not None:
+                    renderer.last_action = np.asarray(action, dtype=np.float32)
+                    renderer.episode_return = episode_return
+                    renderer.episode_length = episode_length
+                observation, reward, terminated, truncated, info = env.step(action)
+                episode_return += float(reward)
+                episode_length += 1
+                if renderer is not None:
+                    renderer.reward_history.append(float(reward))
+                    stop_requested = renderer.stop_requested
 
+            if renderer is not None:
+                renderer.episode_history.append(episode_return)
+            metrics = ""
+            if "forward_progress_lbm" in info:
+                metrics = (
+                    f", forward={float(info['forward_progress_lbm']):+.3f}, "
+                    f"lateral={float(info['lateral_drift_lbm']):+.3f}"
+                )
+            print(
+                f"[eval] episode={episode + 1}, return={episode_return:+.4f}, "
+                f"length={episode_length}{metrics}"
+            )
+    finally:
+        if renderer is not None:
+            renderer.on_training_end()
+        if video_recorder is not None:
+            video_recorder.close()
 
 
 def main():
@@ -1046,6 +1150,12 @@ def main():
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--checkpoint-every", type=int, default=1000, help="Save an intermediate policy zip every N SAC decisions; 0 disables checkpoints")
     parser.add_argument("--learning-starts", type=int, default=250, help="Replay warm-up SAC decisions before gradient updates")
+    parser.add_argument("--load-model", type=Path, default=None, help="Load an existing SAC ZIP instead of creating a new model")
+    parser.add_argument("--eval-only", action="store_true", help="Run a loaded policy without training")
+    parser.add_argument("--eval-episodes", type=int, default=3, help="Episodes to run in evaluation mode")
+    parser.add_argument("--stochastic-eval", action="store_true", help="Sample actions during evaluation instead of using the deterministic mean")
+    parser.add_argument("--record-video", type=Path, default=None, help="Write an eval-only MP4 containing only the annotated LBM view")
+    parser.add_argument("--playback-speed", type=float, default=5.0, help="Encoded video playback speed multiplier")
 
     parser.add_argument("--render", action="store_true", help="Show realtime LBM vorticity and SAC panel during training")
 
@@ -1064,22 +1174,35 @@ def main():
     parser.add_argument("--action-scale", type=float, default=0.8, help="Scale SAC actions before applying them to MuJoCo actuators")
     parser.add_argument("--per-frame-steps", type=int, default=None, help="Coupled physics substeps per low-level action; defaults to 8 for projected eel CPG and 10 otherwise")
     parser.add_argument("--episode-steps", type=int, default=100, help="Episode length in SAC decisions (or raw actions in direct mode)")
+    parser.add_argument("--task", choices=["goal", "forward"], default="goal", help="Reach a target point, or learn a straight forward swimming gait")
     parser.add_argument("--target-mode", choices=["random", "ahead"], default="random", help="Random front-sector goals for a reusable policy, or a fixed straight-ahead goal")
     parser.add_argument("--target-distance-range", type=float, nargs=2, default=[0.12, 0.25], metavar=("MIN", "MAX"), help="Random target distance range as fractions of LBM ny")
     parser.add_argument("--target-angle-range-deg", type=float, nargs=2, default=[-70.0, 70.0], metavar=("MIN", "MAX"), help="Random target bearing range relative to the eel heading")
     parser.add_argument("--target-radius-fraction", type=float, default=0.02, help="Success radius as a fraction of LBM ny")
+    parser.add_argument("--forward-progress-weight", type=float, default=100.0, help="Forward displacement reward weight")
+    parser.add_argument("--forward-lateral-weight", type=float, default=20.0, help="Lateral displacement penalty weight")
+    parser.add_argument("--forward-heading-weight", type=float, default=0.0001, help="Per-step penalty weight for turning away from the initial heading")
     parser.add_argument("--cpg-smoothing", type=float, default=1.0, help="Deprecated compatibility option; explicit ramp now reaches the SAC target")
     parser.add_argument("--cpg-ramp-steps", type=int, default=10, help="Low-level steps used to linearly reach each new SAC CPG target")
-    parser.add_argument("--cpg-hold-steps", type=int, default=30, help="Low-level steps to hold the reached CPG target")
-    parser.add_argument("--warmup-exploration", choices=["ou", "uniform"], default="ou", help="CPG warm-up exploration; direct mode remains uniform")
-    parser.add_argument("--cpg-seed-config", type=Path, default=None, help="Optional projected-eel scan JSON providing the OU warm-up mean")
-    parser.add_argument("--ou-theta", type=float, default=0.15)
-    parser.add_argument("--ou-sigma", type=float, nargs=4, default=[0.12, 0.10, 0.12, 0.08], metavar=("A", "OMEGA", "K_WAVE", "BIAS"), help="OU sigma in normalized A/omega/k_wave/head_bias coordinates")
-    parser.add_argument("--ou-dt", type=float, default=1.0)
+    parser.add_argument("--cpg-hold-steps", type=int, default=80, help="Low-level steps to hold the reached CPG target")
+    parser.add_argument("--warmup-exploration", choices=["rand", "uniform"], default="rand", help="Range-limited random CPG warm-up, or SB3 full-action uniform warm-up")
+    parser.add_argument("--warmup-head-bias-range", type=float, nargs=2, default=[-0.30, 0.30], metavar=("MIN", "MAX"), help="Physical head_bias range used by random CPG warm-up")
     args = parser.parse_args()
 
     if args.control_mode == "cpg" and args.animal != "eel":
         parser.error("--control-mode cpg is currently implemented for --animal eel")
+    if args.task == "forward" and args.animal != "eel":
+        parser.error("--task forward is currently implemented for --animal eel")
+    if args.eval_only and args.load_model is None:
+        parser.error("--eval-only requires --load-model")
+    if args.load_model is not None and not args.load_model.exists():
+        parser.error(f"Model ZIP not found: {args.load_model}")
+    if args.record_video is not None and not args.eval_only:
+        parser.error("--record-video requires --eval-only")
+    if args.record_video is not None and args.control_mode != "cpg":
+        parser.error("--record-video currently requires --control-mode cpg")
+    if args.playback_speed <= 0.0:
+        parser.error("--playback-speed must be positive")
     if not (
         0.0 < args.target_distance_range[0] <= args.target_distance_range[1]
     ):
@@ -1092,6 +1215,8 @@ def main():
         parser.error("--target-angle-range-deg must stay in the forward half-plane [-90, 90]")
     if not (0.0 < args.target_radius_fraction < 0.5):
         parser.error("--target-radius-fraction must be between 0 and 0.5")
+    if not (-0.30 <= args.warmup_head_bias_range[0] <= args.warmup_head_bias_range[1] <= 0.30):
+        parser.error("--warmup-head-bias-range must stay within [-0.30, 0.30]")
 
 
 
@@ -1149,11 +1274,14 @@ def main():
         raw_env.action_scale = float(args.action_scale)
 
     if args.animal == "eel":
-        # Configure the goal distribution before the first reset.
+        raw_env.task_mode = args.task
         raw_env.randomize_target = args.target_mode == "random"
         raw_env.target_distance_range_fraction = tuple(args.target_distance_range)
         raw_env.target_angle_range_deg = tuple(args.target_angle_range_deg)
         raw_env.target_radius_fraction = float(args.target_radius_fraction)
+        raw_env.forward_progress_weight = float(args.forward_progress_weight)
+        raw_env.forward_lateral_weight = float(args.forward_lateral_weight)
+        raw_env.forward_heading_weight = float(args.forward_heading_weight)
 
     set_lbm_viscosity(raw_env, args.viscosity)
     base_env = SingleEnvWrapper(
@@ -1174,12 +1302,25 @@ def main():
     else:
         train_env = base_env
 
-    monitor_suffix = "_goal_cpg" if args.control_mode == "cpg" else ""
-    # Store goal metrics with each completed episode.
+    task_suffix = "_forward" if args.task == "forward" else "_goal"
+    monitor_suffix = (
+        f"{task_suffix}_cpg"
+        if args.control_mode == "cpg"
+        else ("_forward" if args.task == "forward" else "")
+    )
+    if args.task == "forward":
+        monitor_info_keywords = ("forward_progress_lbm", "lateral_drift_lbm")
+    elif cpg_env is not None:
+        monitor_info_keywords = ("is_success", "target_distance_lbm")
+    else:
+        monitor_info_keywords = ()
     env = Monitor(
         train_env,
-        filename=str(outdir / f"{args.animal}2d{monitor_suffix}.monitor.csv"),
-        info_keywords=("is_success", "target_distance_lbm") if cpg_env is not None else (),
+        filename=str(
+            outdir
+            / f"{args.animal}2d{monitor_suffix}{'.eval' if args.eval_only else ''}.monitor.csv"
+        ),
+        info_keywords=monitor_info_keywords,
     )
     model_name = f"sac_{args.animal}2d{monitor_suffix}"
 
@@ -1187,43 +1328,50 @@ def main():
 
     model_class = SAC
     model_extra_kwargs: Dict[str, Any] = {}
-    warmup_seed_parameters = None
-    warmup_seed_source = None
-    if cpg_env is not None and args.warmup_exploration == "ou":
-        warmup_mean, warmup_seed_parameters, warmup_seed_source = load_cpg_warmup_seed(
-            cpg_env, args.cpg_seed_config
-        )
+    warmup_parameter_low = None
+    warmup_parameter_high = None
+    if (
+        cpg_env is not None
+        and args.warmup_exploration == "rand"
+        and args.load_model is None
+    ):
+        warmup_parameter_low = cpg_env.PARAMETER_LOW.copy()
+        warmup_parameter_high = cpg_env.PARAMETER_HIGH.copy()
+        warmup_parameter_low[3] = args.warmup_head_bias_range[0]
+        warmup_parameter_high[3] = args.warmup_head_bias_range[1]
         model_class = CPGWarmupSAC
         model_extra_kwargs = {
-            "warmup_mean": warmup_mean,
-            "ou_theta": args.ou_theta,
-            "ou_sigma": np.array(args.ou_sigma, dtype=np.float32),
-            "ou_dt": args.ou_dt,
-            "ou_seed": args.seed,
+            "warmup_low": cpg_env._parameters_to_normalized(warmup_parameter_low),
+            "warmup_high": cpg_env._parameters_to_normalized(warmup_parameter_high),
+            "warmup_seed": args.seed,
         }
-        source_text = warmup_seed_source or "built-in default (scan JSON not found)"
         print(
-            f"[CPG warmup] OU mean source: {source_text}; "
-            f"physical seed={warmup_seed_parameters.tolist()}"
+            "[CPG warmup] independent uniform random parameters: "
+            f"low={warmup_parameter_low.tolist()}, "
+            f"high={warmup_parameter_high.tolist()}"
         )
 
-    model = model_class(
-        "MlpPolicy",
-        env,
-        learning_rate=3e-4,
-        buffer_size=100_000,
-        learning_starts=args.learning_starts,
-        batch_size=256,
-        gamma=0.99,
-        tau=0.005,
-        train_freq=1,
-        gradient_steps=1,
-        verbose=1,
-        tensorboard_log=str(outdir / "tb"),
-        device="cuda",
-        seed=args.seed,
-        **model_extra_kwargs,
-    )
+    if args.load_model is not None:
+        model = SAC.load(str(args.load_model), env=env, device="cuda")
+        print(f"Loaded: {args.load_model}")
+    else:
+        model = model_class(
+            "MlpPolicy",
+            env,
+            learning_rate=3e-4,
+            buffer_size=100_000,
+            learning_starts=args.learning_starts,
+            batch_size=256,
+            gamma=0.99,
+            tau=0.005,
+            train_freq=1,
+            gradient_steps=1,
+            verbose=1,
+            tensorboard_log=str(outdir / "tb"),
+            device="cuda",
+            seed=args.seed,
+            **model_extra_kwargs,
+        )
 
     realtime_callback = (
         RealtimeLBMCallback(
@@ -1239,11 +1387,48 @@ def main():
         if args.render
         else None
     )
-    if realtime_callback is not None and cpg_env is not None:
+    video_recorder = (
+        LBMVideoRecorder(
+            raw_env,
+            cpg_env,
+            output_path=args.record_video,
+            height=args.render_height,
+            vorticity_vmax=args.vorticity_vmax,
+            playback_speed=args.playback_speed,
+            frame_stride=args.render_substep_every,
+        )
+        if args.record_video is not None and cpg_env is not None
+        else None
+    )
+    render_hooks: list[Callable[[float], bool]] = []
+    if realtime_callback is not None:
+        render_hooks.append(realtime_callback.render_cpg_substep)
+    if video_recorder is not None:
+        render_hooks.append(video_recorder.record)
+    if render_hooks and cpg_env is not None:
+        def render_outputs(reward: float) -> bool:
+            keep_running = True
+            for hook in render_hooks:
+                keep_running = bool(hook(reward)) and keep_running
+            return keep_running
+
         cpg_env.set_render_hook(
-            realtime_callback.render_cpg_substep,
+            render_outputs,
             every=args.render_substep_every,
         )
+
+    if args.eval_only:
+        evaluate_loaded_policy(
+            model,
+            env,
+            realtime_callback,
+            video_recorder,
+            episodes=args.eval_episodes,
+            seed=args.seed,
+            deterministic=not args.stochastic_eval,
+        )
+        env.close()
+        return
 
     # Keep checkpoints independent of optional rendering.
     callbacks: list[BaseCallback] = []
@@ -1272,17 +1457,22 @@ def main():
         saved_config = cpg_env.config_dict()
         saved_config["warmup_exploration"] = args.warmup_exploration
         saved_config["learning_starts"] = args.learning_starts
-        saved_config["ou_theta"] = args.ou_theta
-        saved_config["ou_sigma"] = list(args.ou_sigma)
-        saved_config["ou_dt"] = args.ou_dt
-        saved_config["warmup_seed_parameters"] = (
-            warmup_seed_parameters.tolist() if warmup_seed_parameters is not None else None
+        saved_config["warmup_parameter_low"] = (
+            warmup_parameter_low.tolist() if warmup_parameter_low is not None else None
         )
-        saved_config["warmup_seed_source"] = warmup_seed_source
+        saved_config["warmup_parameter_high"] = (
+            warmup_parameter_high.tolist() if warmup_parameter_high is not None else None
+        )
         saved_config["target_mode"] = args.target_mode
+        saved_config["task"] = args.task
         saved_config["target_distance_range_fraction"] = list(args.target_distance_range)
         saved_config["target_angle_range_deg"] = list(args.target_angle_range_deg)
         saved_config["target_radius_fraction"] = args.target_radius_fraction
+        saved_config["forward_reward_weights"] = {
+            "progress": args.forward_progress_weight,
+            "lateral": args.forward_lateral_weight,
+            "heading": args.forward_heading_weight,
+        }
         saved_config["policy_observation_dim"] = int(np.prod(cpg_env.observation_space.shape))
         saved_config["seed"] = args.seed
         saved_config["checkpoint_every"] = args.checkpoint_every

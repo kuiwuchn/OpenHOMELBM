@@ -17,15 +17,10 @@ Drag to orbit, use the mouse wheel to zoom, press `Space` to pause, `R` to
 reset, and `Q` or `Esc` to quit. Preset keys include `W` for forward, `A`/`D`
 for turns, `F` for fast motion, and `S` for idle.
 
-The action panel exposes `A`, `omega`, `k_wave`, and `head_bias`. Roll is fixed
-at zero; the realtime demo has no ascend/descend presets.
-The checked-in `fast` preset stays below the normalized parameter limits to
-leave numerical headroom during long interactive runs.
-
 ![Articulated eel inside transparent three-dimensional vorticity slices](../assets/demos/eel3d-vorticity.jpg)
 
 *The orbit renderer stacks signed-vorticity slices around the MuJoCo eel while
-the coupled simulation advances on CUDA.*
+the coupled simulation advances on Warp.*
 
 ## Export vorticity slices
 
@@ -60,7 +55,7 @@ python tools/lbm3d_realtime_control.py `
 ```
 
 This configuration instantiates `Karman3DEnv`, a static-cylinder environment
-that advances the D3Q27 flow without rigid-body control or training rewards.
+that advances the D3Q27 flow.
 The checked-in scene uses five solver substeps per rendered frame and an inlet
 speed of `0.12`, so the alternating wake becomes visible sooner while the
 initial Reynolds number remains `400`.

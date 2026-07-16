@@ -25,7 +25,7 @@ python train_sac_minimal.py `
 This is a straight-swimming task with no sampled target point. Its reward
 encourages forward progress while penalizing lateral drift and heading error.
 `--warmup-exploration rand` samples CPG parameters independently from their
-configured physical ranges; `ou` is not a supported warm-up exploration mode.
+configured physical ranges.
 
 The training artifacts are written under `outputs/sac_minimal/` as
 `sac_eel2d_forward_cpg.zip` and `sac_eel2d_forward_cpg_config.json`. The saved
@@ -33,8 +33,8 @@ JSON records the physical CPG parameter ranges used alongside the policy archive
 
 ![Pretrained SAC forward policy evaluated in the projected eel environment](../assets/demos/sac-forward.jpg)
 
-*The checked-in policy is evaluated without a target point; the overlay reports
-forward-task reward, accumulated return, simulation steps, and playback speed.*
+*The checked-in policy runs the forward task; the overlay reports reward,
+accumulated return, simulation steps, and playback speed.*
 
 ## Export from an existing trained policy
 
@@ -85,8 +85,7 @@ python train_sac_minimal.py `
 ```
 
 Loading a Stable-Baselines3 ZIP restores the policy and optimizer state, but
-not the previous replay buffer. This is therefore a warm start rather than an
-exact continuation of the original 16k run.
+not the previous replay buffer.
 
 ## Rendering
 

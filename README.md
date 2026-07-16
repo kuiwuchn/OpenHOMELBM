@@ -1,5 +1,16 @@
 # LBM-RIGID
 
+## Documentation
+
+The source documentation is under [`docs/`](docs/index.md) and includes the
+public 2D/3D Python API, architecture notes, and runnable realtime/training
+examples. Build it locally with:
+
+```powershell
+pip install -r requirements-docs.txt
+mkdocs build --strict
+```
+
 ## Environment Setup
 
 ### Step 1: Create a Conda environment
@@ -29,22 +40,22 @@ pip install -r requirements.txt
 
 ## Run Commands
 
-### Train the 2D eel with SAC-controlled CPG parameters
+### Train the projected-2D LBM eel with SAC-controlled CPG parameters
 
 The CPG mode uses the same projected 12-segment model and parameterization as
 `configs/realtime_2d/eel2d.json`. SAC outputs four normalized planar parameters:
 `A`, `omega`, `k_wave`, and `head_bias`. They drive the 11 yaw position actuators
-from `eel_3d.xml`; all roll actuators are fixed at zero. The built-in OU warm-up
-mean is the known-working `fast` preset `[0.36, -1.0, 0.65, 0]`.
+from `eel_3d.xml`; all roll actuators are fixed at zero. During replay-buffer
+warm-up, `rand` samples independent CPG parameters from their physical ranges.
 
 ```powershell
-python train_sac_minimal.py --animal eel --control-mode cpg --per-frame-steps 8 --cpg-ramp-steps 10 --cpg-hold-steps 30 --target-mode random --target-distance-range 0.12 0.25 --target-angle-range-deg -70 70 --episode-steps 100 --warmup-exploration ou --learning-starts 250 --warmup-steps 15 --checkpoint-every 1000 --total-steps 10000
+python train_sac_minimal.py --animal eel --control-mode cpg --task forward --per-frame-steps 8 --cpg-ramp-steps 10 --cpg-hold-steps 30 --episode-steps 100 --warmup-exploration rand --learning-starts 250 --warmup-steps 15 --checkpoint-every 1000 --total-steps 10000
 ```
 
 Use `--render` only for short visual checks; headless training is faster. The model and
 the physical CPG parameter ranges used for training are saved under
-`outputs/sac_minimal/` as `sac_eel2d_goal_cpg.zip` and
-`sac_eel2d_goal_cpg_config.json`.
+`outputs/sac_minimal/` as `sac_eel2d_forward_cpg.zip` and
+`sac_eel2d_forward_cpg_config.json`.
 In CPG render mode, the right panel shows executed versus SAC-target parameters, the
 11 generated yaw commands over one cycle, and the exact transformed capsule
 polygons used by the LBM coupling. Each SAC target is reached with a 10-step linear ramp,
@@ -54,27 +65,27 @@ the display is refreshed inside that hold interval rather than waiting for the n
 decision. `--render-substep-every 2` renders every other low-level step if GPU readback
 overhead is more important than maximum visual smoothness.
 
-At reset, the goal-conditioned task samples a green target in the eel's forward sector:
-distance `0.12-0.25 * ny` and bearing `-70` to `+70` degrees. Reward is dense target progress,
-`100 * (previous_distance - current_distance) / ny`, with a `+5` arrival bonus inside
-a `0.02 * ny` radius. The body-frame target vector is included in the observation.
-For CPG training, only the latest rigid state is used (no before/after duplication) and
-the noisy generalized-force vector is omitted, reducing policy observation size from
-185 to 45 dimensions. Successful episodes and final target distance are written to the
-Monitor CSV.
+The forward task does not sample or render a target point. Its dense reward encourages
+displacement along the eel's initial heading while penalizing lateral drift and heading
+error. For CPG training, only the latest rigid state is used (no before/after
+duplication), and the noisy generalized-force vector is omitted, reducing the policy
+observation size from 185 to 45 dimensions. Forward progress and lateral drift are
+written to the Monitor CSV.
 
-During the first `--learning-starts` SAC decisions, CPG mode uses OU-correlated
-exploration around the built-in `fast` preset or an optional `--cpg-seed-config`;
-`A`, `omega`, `k_wave`, and `head_bias` all receive correlated noise, so steering is
-explored from the beginning of warm-up.
-After warm-up, actions come from SAC's stochastic policy without added OU noise.
+During the first `--learning-starts` SAC decisions, `--warmup-exploration rand`
+samples `A`, `omega`, `k_wave`, and `head_bias` independently within their configured
+physical ranges. After warm-up, actions come from SAC's stochastic policy.
 
 ### Run the 2D realtime LBM controller:
 
 ```powershell
 python tools/lbm2d_realtime_control.py --config configs/realtime_2d/eel2d.json
 ```
-Run a realtime 2D Karman vortex street around a fixed cylinder using the project 2D rigid-body/LBM coupled solver. The right panel shows Reynolds number and `+` / `-` adjusts it live; `W/A/S/D` moves the cylinder in LBM space:
+Run a realtime 2D Karman vortex street around a fixed 3D MuJoCo cylinder whose
+cross-section is projected into the 2D LBM solver. MuJoCo still evolves the
+three-dimensional rigid-body state. The right panel shows Reynolds number and
+`+` / `-` adjusts it live; `W/A/S/D` moves the projected cylinder boundary in
+LBM space:
 
 
 ```powershell
@@ -88,17 +99,11 @@ python tools\lbm2d_realtime_control.py --config configs\realtime_2d\karman2d.jso
 ```
 
 
-Alternative moving-cylinder setup: the fluid starts still, and the circular solid translates through the domain using the same project LBM solid boundary solver:
-
-```powershell
-python tools\lbm2d_realtime_control.py --config configs\realtime_2d\karman2d_moving.json
-```
-
-The JSON configs define the cylinder model, LBM grid, velocity/viscosity, boundary conditions or prescribed solid motion, and output video path. The default outputs are:
+The JSON config defines the cylinder model, LBM grid, velocity/viscosity,
+boundary conditions, and output video path. The default output is:
 
 ```text
 outputs/karman_vortex_2d.mp4
-outputs/karman_vortex_2d_moving.mp4
 ```
 
 
@@ -113,8 +118,6 @@ Important JSON fields:
 - `lbm.flow.bc_type` / `bc_value`: left velocity inlet and zero-gradient-style copy boundaries elsewhere.
 - `lbm.flow.inlet_perturbation`: small transverse inlet perturbation used to break the perfectly symmetric wake and seed alternating vortex shedding.
 - `lbm.flow.wake_perturbation`: local downstream body-force perturbation near the cylinder wake; this is used to push the symmetric shear layers into alternating vortex shedding.
-- `env.prescribed_motion`: optional LBM-space rigid-body motion, used by `karman2d_moving.json` to translate the cylinder through still fluid.
-
 - `run.headless`, `run.record`, `run.steps`, `run.record_start_step`, `run.record_every`: optional headless export settings. For realtime viewing, keep `run.headless=false`.
 
 
@@ -131,19 +134,34 @@ python tools\lbm3d_realtime_control.py --config configs\realtime_3d\eel3d.json -
 Live `orbit` mode computes signed vorticity slices on CUDA and transfers the RGBA
 atlas directly to OpenGL. The default view uses 15 full-resolution transparent
 `z` slices, a top-left LBM status overlay, and a right-side action panel for
-`A`, `omega`, `k_wave`, `head_bias`, and `roll`. Realtime preview defaults to two
+`A`, `omega`, `k_wave`, and `head_bias`. Realtime preview defaults to two
 coupled substeps per displayed frame; pass `--per-frame-steps 10` to use the JSON
 export cadence at a lower display FPS.
 
 Drag the left view to orbit the camera and use the mouse wheel to zoom. Drag any
 right-side action bar to enter manual override and set that action in `[-1, 1]`;
 the other actions keep their current values. Pressing a preset key exits manual
-override: `W` forward, `A` left, `D` right, `F` fast, `S` idle, and `Z`/`C`
-vertical control. `Space` pauses, `R` resets, and `Q` or `Esc` quits.
+override: `W` forward, `A` left, `D` right, `F` fast, and `S` idle. `Space`
+pauses, `R` resets, and `Q` or `Esc` quits.
 
 Useful live-view options include `--action-panel-width`, `--orbit-zoom`,
 `--orbit-show-box`, and `--orbit-with-mujoco` (replace the action panel with a
 MuJoCo view).
+
+### Run the 3D Karman scene in realtime
+
+```powershell
+python tools\lbm3d_realtime_control.py --config configs\realtime_3d\karman3d.json --preset steady --view-mode orbit --volume-render-mode slices --volume-slice-count 9
+```
+
+This opens the live orbit viewer for a Karman vortex street around a fixed
+cylinder. The JSON uses `env_type: karman3d`, uniform x-direction inflow, and a
+small wake perturbation to seed alternating vortex shedding. Its compact panel
+shows `Re`, lattice viscosity, inlet speed, and cylinder diameter; use `+`/`-`
+to adjust Reynolds number from 100 to 600 in steps of 50.
+The default scene advances five solver substeps per rendered frame and uses an
+inlet speed of `0.12`, making the alternating wake visible sooner while keeping
+the initial Reynolds number at 400.
 
 ### Export a 3D LBM rendering video. 
 
@@ -163,14 +181,6 @@ python tools\lbm3d_realtime_control.py --config configs\realtime_3d\eel3d.json -
 ```
 
 This preset uses full-resolution volume sampling (`--volume-stride 1`), 15 transparent slices, fixed global `z` vorticity coloring, and a lower color percentile so weaker vortices remain visible.
-
-3D Karman vortex street around a fixed cylinder:
-
-```powershell
-python tools\lbm3d_realtime_control.py --config configs\realtime_3d\karman3d.json --preset steady --export-lbm outputs\karman_vortex_3d_slice.mp4 --export-steps 9000 --export-render-every 10 --record-fps 30 --view-mode orbit --volume-render-mode slices --volume-stride 1 --volume-slice-axis z --volume-slice-count 9 --volume-color-axis z --volume-slice-alpha 0.25 --volume-vmax-percentile 98
-```
-
-The 3D Karman JSON uses `env_type: karman3d`, a fixed MuJoCo cylinder mesh, uniform x-direction inflow, and a small local wake perturbation to seed alternating vortex shedding. With `--export-render-every 10` and `--record-fps 30`, `--export-steps 9000` produces about 30 seconds of video.
 
 Common export options:
 
@@ -208,9 +218,10 @@ Important fields:
 - `model.mjcf_path`: MuJoCo XML model path.
 - `model.root_link`: Root body used for LBM/MuJoCo alignment.
 - `lbm`: 3D grid size, `lbm_scale`, fluid density, and coupling substeps.
-- `control.control_mode`: Eel uses `wave` for 5-dimensional traveling-wave actions.
+- `control.control_mode`: Eel uses `wave`; the realtime panel exposes four
+  traveling-wave parameters and fixes the environment's roll channel to zero.
 - `control.task_by_preset`: Maps preset names to multitask targets such as `forward` or `turn_left`.
-- `controls`: Keyboard-to-preset mapping.
+- `keyboard_control`: Keyboard-to-preset mapping.
 - `presets.action_keys`: Defines the order used to convert preset dictionaries into action vectors.
 - `presets.actions`: Named preset action dictionaries.
 
@@ -220,8 +231,8 @@ The 2D realtime control entry point uses a JSON file to configure the scene, LBM
 
 
 ```text
-configs/realtime_2d/fish2d.json
 configs/realtime_2d/eel2d.json
+configs/realtime_2d/karman2d.json
 ```
 
 Top-level structure:
@@ -233,7 +244,7 @@ Top-level structure:
   "lbm": {},
   "render": {},
   "control": {},
-  "controls": {},
+  "keyboard_control": {},
   "presets": {}
 }
 ```
@@ -242,20 +253,11 @@ Top-level structure:
 
 `env` selects the environment class, MuJoCo XML, and the rigid bodies that participate in the 2D LBM projection.
 
-Fish example:
-
-```json
-"env": {
-  "class": "FishLBMEnv",
-  "xml_path": "envs/lbm/fish/fish_2d_v3.xml"
-}
-```
-
 Eel example:
 
 ```json
 "env": {
-  "class": "GenericLBM2DEnv",
+  "class": "Eel2DLBMEnv",
   "xml_path": "envs/lbm3d/eel/eel_3d.xml",
   "solid_config": [
     {"solid_id": 0, "body_id": 1, "body_or_geom_name": "seg1", "lbm_position": [200, 350], "is_body": true}
@@ -265,9 +267,10 @@ Eel example:
 
 Fields:
 
-- `class`: Environment class name. Common values: `FishLBMEnv`, `GenericLBM2DEnv`.
+- `class`: Environment class name. Supported values are `Eel2DLBMEnv` and
+  `Karman2DEnv`.
 - `xml_path`: MuJoCo XML path, relative to the project root.
-- `solid_config`: Used by `GenericLBM2DEnv` to map XML bodies into 2D LBM solids.
+- `solid_config`: Used by `Karman2DEnv` to map the cylinder into the 2D LBM grid.
   - `solid_id`: Solid index in the LBM solver, starting from `0`.
   - `body_id`: MuJoCo body id.
   - `body_or_geom_name`: Body or geom name.
@@ -362,10 +365,10 @@ Command-line overrides:
 --control-dt 0.01 --warmup-steps 15 --transition-steps 36 --start-mode idle --action-gain 1.0 --gain-step 0.1
 ```
 
-### `controls`: Keyboard-to-preset mapping
+### `keyboard_control`: Keyboard-to-preset mapping
 
 ```json
-"controls": {
+"keyboard_control": {
   "w": "forward",
   "a": "turn_l",
   "d": "turn_r",
@@ -379,7 +382,8 @@ The key is the keyboard input, and the value is the preset name from `presets`.
 
 ### `presets`: Preset actions
 
-`presets` defines how each action mode is generated. Any name referenced by `controls` or `start_mode` must exist here.
+`presets` defines how each action mode is generated. Any name referenced by
+`keyboard_control` or `start_mode` must exist here.
 
 #### `constant`: Constant action
 
@@ -392,26 +396,6 @@ The key is the keyboard input, and the value is the preset name from `presets`.
 
 - `values` length must match the actuator count.
 - Commonly used for `idle`.
-
-#### `sine`: Generic sine action
-
-Fish example:
-
-```json
-"forward": {
-  "type": "sine",
-  "components": [
-    {"amp": 0.65, "freq": 2.4, "phase": 0.0, "bias": 0.0},
-    {"amp": 0.95, "freq": 2.4, "phase": 1.35, "bias": 0.0}
-  ]
-}
-```
-
-- `components` length must match the actuator count.
-- `amp`: Amplitude.
-- `freq`: Frequency.
-- `phase`: Phase offset.
-- `bias`: Offset, often used for turning.
 
 #### `eel_wave`: Eel traveling-wave action
 
@@ -447,52 +431,3 @@ Fields:
 - `roll`: Constant roll command. The default is `0.0`, so odd-numbered channels such as `u1/u3/...` do not oscillate.
 - `head_amp`: Optional head amplitude ratio. Default: `0.05`.
 - `k_max`: Optional maximum wave-number scale. Default: `1.5`.
-
-### Minimal config template
-
-```json
-{
-  "name": "my_case",
-  "env": {
-    "class": "FishLBMEnv",
-    "xml_path": "envs/lbm/fish/fish_2d_v3.xml"
-  },
-  "lbm": {
-    "nx": 400,
-    "ny": 600,
-    "lbm_scale": 0.2,
-    "per_frame_steps": 10
-  },
-  "render": {
-    "type": "vorticity",
-    "output_height": 720,
-    "control_panel_width": 270,
-    "window_name": "LBM 2D Control"
-  },
-  "control": {
-    "dt": 0.01,
-    "warmup_steps": 10,
-    "transition_steps": 24,
-    "start_mode": "idle",
-    "action_gain": 1.0,
-    "gain_step": 0.1
-  },
-  "controls": {
-    "w": "forward",
-    "s": "idle"
-  },
-  "presets": {
-    "forward": {
-      "type": "sine",
-      "components": [
-        {"amp": 0.65, "freq": 2.4, "phase": 0.0, "bias": 0.0},
-        {"amp": 0.95, "freq": 2.4, "phase": 1.35, "bias": 0.0}
-      ]
-    },
-    "idle": {
-      "type": "constant",
-      "values": [0.0, 0.0]
-    }
-  }
-}
-```

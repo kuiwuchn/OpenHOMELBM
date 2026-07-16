@@ -1,8 +1,28 @@
+"""Core data structures for the two-dimensional D2Q9 LBM solver.
+
+The :class:`HomeFlow` Warp struct owns the fluid fields and rigid-boundary
+state for one simulation world. Grid arrays use the project-native
+``(nx, ny)`` storage order; rendering helpers transpose them for display.
+"""
+
+from typing import Any, Optional
+
 import warp as wp
+
 from .solid_func import generate_unit_circle_points
+
+__all__ = ["HomeFlow"]
+
 
 @wp.struct
 class HomeFlow:
+    """Store the D2Q9 fluid and immersed-solid state for one 2D world.
+
+    Allocate the arrays by calling :meth:`Initialize` before launching LBM
+    kernels. Each :class:`~envs.lbm.lbm_solver.LBM_Solver` owns one instance
+    per parallel world.
+    """
+
     nx: int  # number of grid cells in x direction
     ny: int  # number of grid cells in y direction
 
@@ -67,7 +87,19 @@ class HomeFlow:
     small_size: float
     small_u_img: wp.array2d(dtype=wp.float32) # flow.uocity（2）
     
-    def Initialize(self, nx, ny, n_objects=1):
+    def Initialize(self, nx: int, ny: int, n_objects: int = 1) -> None:
+        """Allocate fluid and rigid-body buffers for one simulation world.
+
+        Args:
+            nx: Number of lattice cells along the x axis.
+            ny: Number of lattice cells along the y axis.
+            n_objects: Number of immersed rigid objects whose forces and
+                transforms are tracked independently.
+
+        Notes:
+            Arrays are allocated on Warp's current device. The solver launches
+            initialization kernels after constructing all worlds.
+        """
         self.time_step = 1.0
         self.nx, self.ny = nx, ny
         self.grid_length = 1.0/nx
@@ -137,19 +169,36 @@ class HomeFlow:
         
         # print(f"Initialized HomeFlow with {n_objects} objects")
     
-    def configure_solid(self, solid_id, lines, position, angle=0.0, scale=0.3, 
-                       mass=100000.0, mass_center=None):
-        """
-        Configure a specific solid object using GPU kernel for better performance.
+    def configure_solid(
+        self,
+        solid_id: int,
+        lines: Any,
+        position: Any,
+        angle: float = 0.0,
+        scale: float = 0.3,
+        mass: float = 100000.0,
+        mass_center: Optional[Any] = None,
+    ) -> None:
+        """Configure one immersed solid from a closed 2D polygon.
         
         Args:
-            solid_id: Index of the solid (0 to n_objects-1)
-            lines: List/array of line segment vertices
-            position: Initial position (tuple or wp.vec2)
-            angle: Initial angle in radians
-            scale: Scale factor for the geometry
-            mass: Mass of the object
-            mass_center: Mass center in local coordinates (default: (0,0))
+            solid_id: Object index in ``[0, n_objects)``.
+            lines: Polygon vertices with shape ``(n_segments, 2)``. Accepts a
+                Warp array, NumPy array, or array-like object.
+            position: Initial center in LBM lattice coordinates as ``(x, y)``.
+            angle: Initial counter-clockwise angle in radians.
+            scale: Geometry scale, conventionally expressed relative to
+                ``nx`` by the MuJoCo-to-LBM mapping.
+            mass: Rigid-body mass used when deriving the moment of inertia.
+            mass_center: Optional local center of mass. Defaults to ``(0, 0)``.
+
+        Raises:
+            ValueError: If ``solid_id`` is outside the allocated object range.
+
+        Notes:
+            This method may reallocate all polygon buffers when the new solid
+            has more vertices than the current shared capacity. It synchronizes
+            Warp before returning.
         """
         import numpy as np
         import math
@@ -196,7 +245,8 @@ class HomeFlow:
         else:
             mc = wp.vec2(float(mass_center[0]), float(mass_center[1]))
         
-        # Calculate max radius
+        # Use a conservative squared radius because cut-cell tests compare
+        # squared distances in lattice coordinates.
         max_dist = 0.0
         for i in range(num_segments):
             p = lines_np[i]

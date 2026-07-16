@@ -24,8 +24,17 @@
     "fluid_density": 1000.0,
     "per_frame_steps": 5,
     "flow": {
-      "initial_velocity": [0.08, 0.0, 0.0],
-      "viscosity": 0.0048,
+      "initial_velocity": [0.12, 0.0, 0.0],
+      "viscosity": 0.0072,
+      "reynolds_control": {
+        "enabled": true,
+        "value": 400.0,
+        "min": 100.0,
+        "max": 600.0,
+        "step": 50.0,
+        "velocity": 0.12,
+        "diameter": 24.0
+      },
 
 
 
@@ -33,7 +42,7 @@
       "bc_type": [0, 1, 1, 1, 1, 1],
 
       "bc_value": [
-        [0.08, 0.0, 0.0],
+        [0.12, 0.0, 0.0],
         [0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0],
@@ -42,9 +51,9 @@
       ],
       "inlet_perturbation": {
         "boundary": "left",
-        "base": [0.08, 0.0, 0.0],
-        "amplitude": [0.0, 0.004, 0.0],
-        "period_steps": 360,
+        "base": [0.12, 0.0, 0.0],
+        "amplitude": [0.0, 0.006, 0.0],
+        "period_steps": 240,
         "phase": 0.0
       },
       "wake_perturbation": {
@@ -54,8 +63,8 @@
 
 
 
-        "force": [0.0, 0.0005, 0.0],
-        "period_steps": 240,
+        "force": [0.0, 0.0008, 0.0],
+        "period_steps": 180,
         "active_steps": 3500,
         "phase": 1.5707963268
       }
@@ -71,7 +80,7 @@
       "steady": "forward"
     }
   },
-  "controls": {
+  "keyboard_control": {
     "s": "steady"
   },
   "presets": {

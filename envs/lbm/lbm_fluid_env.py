@@ -1,3 +1,5 @@
+"""Gym-compatible environment for coupled 2D LBM and MuJoCo simulation."""
+
 import gym
 from gym import spaces
 import numpy as np
@@ -13,6 +15,19 @@ from .lbm_fluid_env_func import *
 
 
 class LBMFluidEnv(gym.Env):
+    """Couple batched 2D LBM fields to 3D MuJoCo rigid bodies.
+
+    MuJoCo-Warp evolves the full three-dimensional rigid-body state. The
+    environment projects configured body geometry and motion onto the 2D D2Q9
+    lattice, then couples the planar fluid loads back to the MuJoCo bodies.
+    Subclasses define task observations, rewards, and termination conditions.
+
+    Notes:
+        Arrays exposed by :meth:`reset` and :meth:`step` include a leading
+        ``nworld`` dimension. Rendering always visualizes world zero. A CUDA
+        device is currently required by the environment implementation.
+    """
+
     def __init__(
         self,
         xml_path: str,
@@ -31,7 +46,8 @@ class LBMFluidEnv(gym.Env):
         Args:
             xml_path: MuJoCo XML model path
             solid_config: Rigid body configuration list, each element is a dict
-            nx, ny: LBM grid dimensions
+            nx: Number of lattice cells along the x axis.
+            ny: Number of lattice cells along the y axis.
             lbm_scale: MuJoCo to LBM scaling ratio
             render_mode: Rendering mode ('human', 'rgb_array', None)
             max_episode_steps: Maximum steps per episode
@@ -540,9 +556,8 @@ class LBMFluidEnv(gym.Env):
         """
         NotImplementedError("Please implement termination condition in subclass")
 
-    def render(self):
-        """
-        Render environment
+    def render(self) -> Optional[np.ndarray]:
+        """Render the first simulation world.
 
         Based on render flags:
         - render_solid_boundary=True: render solid boundaries
@@ -550,9 +565,10 @@ class LBMFluidEnv(gym.Env):
         - Default: render velocity field magnitude
 
         Returns:
-            Depending on render_mode:
-            - "rgb_array": returns image array
-            - "human": real-time display or collect frames
+            A scalar field with shape ``(ny, nx)`` when
+            ``render_mode='rgb_array'``; otherwise ``None``. Human mode either
+            updates a live window or appends the scalar field to the video
+            buffer.
         """
         if self.render_mode is None:
             return None
@@ -702,17 +718,18 @@ class LBMFluidEnv(gym.Env):
         self.fig.canvas.flush_events()
         plt.pause(0.001)  # Brief pause to update display
 
-    def save_video(self, filepath: Optional[str] = None):
-        """
-        Save collected frames to video file
+    def save_video(self, filepath: Optional[str] = None) -> None:
+        """Encode buffered human-mode frames as an H.264 video.
 
         Based on render flags type of video saved
 
         Args:
             filepath: Video save path (optional), defaults to 'lbm_episode.mp4'
 
-        Note:
-            - Only effective when render_mode='human' and real_time_rendering=False
+        Notes:
+            Only effective when ``render_mode='human'`` and
+            ``real_time_rendering=False``. Calling the method clears the frame
+            buffer after a successful write.
         """
         if self.real_time_rendering:
             print("Currently in real-time rendering mode, cannot save video.")
@@ -815,10 +832,8 @@ class LBMFluidEnv(gym.Env):
             # Clear frame buffer
             self.frames = []
 
-    def close(self):
-        """
-        Close environment and release resources
-        """
+    def close(self) -> None:
+        """Close the Matplotlib window and release rendering references."""
         # Close matplotlib window (if in real-time rendering mode)
         if self.render_initialized and self.fig is not None:
             import matplotlib.pyplot as plt

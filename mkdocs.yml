@@ -1,0 +1,56 @@
+site_name: LBM-RIGID
+site_description: Differentiable LBM and MuJoCo-Warp environments for fluid-rigid-body control
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            docstring_section_style: list
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            show_source: true
+            signature_crossrefs: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Architecture: architecture.md
+  - Examples:
+      - Overview: examples/index.md
+      - Realtime 2D (projected): examples/realtime-2d.md
+      - Realtime 3D: examples/realtime-3d.md
+      - SAC training: examples/sac-training.md
+  - API reference:
+      - Overview: api/index.md
+      - 2D LBM and projected rigid bodies: api/lbm2d.md
+      - 3D solver and environment: api/lbm3d.md
+      - Environment catalog: api/environments.md

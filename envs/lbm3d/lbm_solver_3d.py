@@ -6,7 +6,7 @@ This module provides the LBM_Solver3D class for parallel 3D LBM simulations.
 import warp as wp
 import numpy as np
 import trimesh
-from typing import Optional, Tuple, Dict, List
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from .lbm_core_3d import HomeFlow3D
 from .lbm_func_3d import (
@@ -17,18 +17,34 @@ from .lbm_func_3d import (
 
 
 class LBM_Solver3D:
-    """3D LBM Solver with multi-world support."""
+    """Advance one or more D3Q27 fluid worlds on a Warp device.
+
+    Args:
+        nx: Number of lattice cells along the x axis.
+        ny: Number of lattice cells along the y axis.
+        nz: Number of lattice cells along the z axis.
+        solid_num: Number of immersed meshes per world.
+        nworld: Number of worlds stepped together.
+        device: Warp device name or device object. Defaults to Warp's preferred
+            device.
+
+    Notes:
+        Mesh geometry and MuJoCo-to-LBM coordinate mappings are shared across
+        worlds; positions, orientations, and hydrodynamic loads are per-world.
+    """
     
-    def __init__(self, nx: int, ny: int, nz: int, 
-                 solid_num: int = 1, nworld: int = 1, device=None):
-        """
-        Initialize the 3D LBM solver for multiple worlds.
+    def __init__(self, nx: int, ny: int, nz: int,
+                 solid_num: int = 1, nworld: int = 1,
+                 device: Optional[Any] = None) -> None:
+        """Initialize D3Q27 fields, boundaries, and batch metadata.
         
         Args:
-            nx, ny, nz: Grid dimensions
-            solid_num: Number of solid objects
-            nworld: Number of parallel worlds
-            device: Warp device to use
+            nx: Number of lattice cells along the x axis.
+            ny: Number of lattice cells along the y axis.
+            nz: Number of lattice cells along the z axis.
+            solid_num: Number of immersed meshes per world.
+            nworld: Number of parallel simulation worlds.
+            device: Warp device name or object.
         """
         self.nx = nx
         self.ny = ny
@@ -69,8 +85,12 @@ class LBM_Solver3D:
         self.solid_ids_wp = None
         self.solid_id_to_index = {}
     
-    def step(self):
-        """Perform a single time step for all worlds."""
+    def step(self) -> None:
+        """Advance every world by one LBM time step.
+
+        Clear per-solid forces, then capture or replay the Warp graph containing
+        stream/collide, boundary-condition, and moment-swap kernels.
+        """
         # Clear forces for all worlds in parallel
         wp.launch(
             init_force_3d_batch,
@@ -114,24 +134,30 @@ class LBM_Solver3D:
         lbm_scale: float = 0.15,
         init_quaternion: Tuple[float, float, float, float] = (1, 0, 0, 0),
         mujoco_origin: Optional[np.ndarray] = None,
-    ) -> Dict:
-        """
-        Create LBM solid from trimesh for all worlds.
+    ) -> Dict[str, Any]:
+        """Create the same triangular mesh solid in every LBM world.
         
         Args:
-            solid_id: Solid object ID
-            mesh: trimesh.Trimesh object
-            lbm_position: Initial position in LBM coordinates
-            lbm_scale: Scale factor relative to nx
-            init_quaternion: Initial quaternion (w, x, y, z)
-            mujoco_origin: MuJoCo origin position for coordinate mapping
+            solid_id: Object index in ``[0, solid_num)``.
+            mesh: Triangular mesh expressed in its body-local frame.
+            lbm_position: Initial center ``(x, y, z)`` in lattice coordinates.
+                Defaults to the domain center.
+            lbm_scale: Mesh scale relative to ``nx``.
+            init_quaternion: Initial ``(w, x, y, z)`` orientation.
+            mujoco_origin: Optional MuJoCo body origin used by later coordinate
+                conversion. Defaults to the zero vector.
             
         Returns:
-            Dictionary with mesh info
+            Mesh metadata containing the local mesh, scaled vertices, effective
+            lattice scale, initial position, and quaternion.
+
+        Notes:
+            The mesh is deliberately not recentered: its body-local origin must
+            remain aligned with the MuJoCo joint or body pivot.
         """
         # Keep mesh vertices in the original MJCF body-local frame.
         #
-        # For articulated models (notably manta), the body origin is the joint
+        # For articulated models, the body origin is the joint
         # anchor/pivot, while the mesh geometry is already authored relative to
         # that pivot in the MJCF local frame. Re-centering to center_mass breaks
         # the hinge anchor and makes child links appear to stretch / grow when
@@ -244,18 +270,18 @@ class LBM_Solver3D:
     def update_solids_batch(
         self,
         world_idx: int,
-        solid_ids: List[int],
+        solid_ids: Sequence[int],
         positions: np.ndarray,
         quaternions: np.ndarray
-    ):
-        """
-        Update multiple solids for a specific world.
+    ) -> None:
+        """Update the poses of multiple solids in one world.
         
         Args:
-            world_idx: World index
-            solid_ids: List of solid IDs to update
-            positions: (N, 3) array of MuJoCo positions
-            quaternions: (N, 4) array of MuJoCo quaternions (w, x, y, z)
+            world_idx: Target world index.
+            solid_ids: Solid IDs corresponding to the first array axis.
+            positions: MuJoCo positions with shape ``(N, 3)``.
+            quaternions: MuJoCo quaternions with shape ``(N, 4)`` in
+                ``(w, x, y, z)`` order.
         """
         flow = self.flows[world_idx]
         
@@ -282,18 +308,19 @@ class LBM_Solver3D:
     def get_forces_and_torques(
         self,
         world_idx: int,
-        solid_ids: Optional[List[int]] = None
+        solid_ids: Optional[Sequence[int]] = None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Get forces and torques on solids for a specific world.
         
         Args:
-            world_idx: World index
-            solid_ids: List of solid IDs (default: all solids)
+            world_idx: Source world index.
+            solid_ids: Solid IDs to read. Defaults to all configured solids.
             
         Returns:
-            forces: (N, 3) array
-            torques: (N, 3) array
+            A ``(forces, torques)`` pair. Both arrays have shape ``(N, 3)`` and
+            are converted from lattice coordinates when a MuJoCo mapping is
+            available.
         """
         if solid_ids is None:
             solid_ids = list(range(self.solid_num))
@@ -318,8 +345,8 @@ class LBM_Solver3D:
         
         return forces, torques
     
-    def reset_world(self, world_idx: int):
-        """Reset a specific world's flow field."""
+    def reset_world(self, world_idx: int) -> None:
+        """Reset one world's fluid field and mesh-transform history."""
         reset_mask = np.zeros(self.nworld, dtype=np.int32)
         reset_mask[world_idx] = 1
         reset_mask_wp = wp.array(reset_mask, dtype=wp.int32, device=self.device)
@@ -337,8 +364,8 @@ class LBM_Solver3D:
         initialized_np[:] = 0
         flow.mesh_transforms_initialized = wp.array(initialized_np, dtype=wp.int32)
     
-    def reset_worlds(self, world_indices: List[int]):
-        """Reset multiple worlds' flow fields."""
+    def reset_worlds(self, world_indices: Sequence[int]) -> None:
+        """Reset selected worlds' fluid fields and transform histories."""
         reset_mask = np.zeros(self.nworld, dtype=np.int32)
         for idx in world_indices:
             reset_mask[idx] = 1
@@ -357,12 +384,14 @@ class LBM_Solver3D:
             initialized_np[:] = 0
             flow.mesh_transforms_initialized = wp.array(initialized_np, dtype=wp.int32)
     
-    def finalize_mappings(self, solid_ids: List[int]):
-        """
-        Finalize all solid creation and create Warp arrays for batch operations.
+    def finalize_mappings(self, solid_ids: Sequence[int]) -> None:
+        """Finalize coordinate-mapping arrays for batch coupling.
         
         Args:
-            solid_ids: List of solid IDs to use (in order)
+            solid_ids: Solid IDs in the same order used by coupling buffers.
+
+        Raises:
+            ValueError: If a requested solid has no MuJoCo mapping.
         """
         self.n = len(solid_ids)
         

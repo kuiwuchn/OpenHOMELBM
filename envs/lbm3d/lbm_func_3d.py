@@ -329,7 +329,7 @@ def any_mesh_hit_along_ray_3d(
     """Return 1 if any mesh is hit along the ray, else 0.
 
     This is more robust for visualization silhouettes than inside/outside sign
-    tests on non-watertight meshes (e.g. current manta assets).
+    tests on non-watertight meshes.
     """
     for solid_id in range(n_objects):
         mesh_id = mesh_ids[solid_id]

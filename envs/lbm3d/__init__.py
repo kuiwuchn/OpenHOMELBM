@@ -1,8 +1,7 @@
-"""
-3D LBM Environment Package
+"""Public API for three-dimensional LBM environments and solvers.
 
-This package provides 3D LBM (Lattice Boltzmann Method) environments
-with multi-world support for parallel training.
+The package provides D3Q27 fluid simulation with multi-world support for
+parallel training and MuJoCo-Warp rigid-body coupling.
 
 Uses gym (not gymnasium) for compatibility with dreamer_vec_wrapper.
 """
@@ -28,11 +27,8 @@ from .lbm_fluid_env_3d_func import (
     fill_xfrc_3d_kernel,
     extract_all_solid_positions_3d_kernel,
 )
-from .fish import FishLBMEnv3D
-from .fish_mg import FishLBMEnv3DMultigoal
-from .starfish import Starfish3DLBMEnvMultigoal
-from .clownfish import Clownfish3DLBMEnv
-from .torus import Torus3DLBMEnv, TorusMultiTaskEnv
+from .eel import Eel3DLBMEnv, EelMultiTaskEnv
+from .karman import Karman3DEnv
 from .mjcf_parser import (
     parse_mjcf,
     parse_mjcf_to_meshes,
@@ -57,13 +53,9 @@ __all__ = [
     'LBM_Solver3D',
     # Environments
     'LBMFluidEnv3D',
-    'VecLBMFluidEnv3D',
-    'FishLBMEnv3D',
-    'FishLBMEnv3DMultigoal',
-    'Starfish3DLBMEnvMultigoal',
-    'Clownfish3DLBMEnv',
-    'Torus3DLBMEnv',
-    'TorusMultiTaskEnv',
+    'Eel3DLBMEnv',
+    'EelMultiTaskEnv',
+    'Karman3DEnv',
     # Environment Kernels
     'extract_body_states_3d',
     'convert_and_update_solid_batch_3d',

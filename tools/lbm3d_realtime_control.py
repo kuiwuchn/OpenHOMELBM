@@ -15,8 +15,7 @@ Controls:
     D        turn_r
     F        fast
     S        freeze/glide/idle fallback
-    Z        ascend
-    C        descend
+    +/-      adjust Reynolds number (Karman)
     Space    pause/resume
     R        reset
     Q/Esc    quit
@@ -198,8 +197,6 @@ DEFAULT_TASK_BY_PRESET = {
     "freeze": "forward",
     "turn_l": "turn_left",
     "turn_r": "turn_right",
-    "ascend": "ascend",
-    "descend": "descend",
 }
 
 
@@ -225,12 +222,14 @@ def get_preset_section(config_data: Dict[str, Any]) -> tuple[Dict[str, dict], li
     if "actions" in preset_section:
         presets = preset_section.get("actions", {})
         action_keys = preset_section.get("action_keys", [])
+        action_keys_are_explicit = "action_keys" in preset_section
     else:
         presets = preset_section
         action_keys = config_data.get("action_keys", [])
+        action_keys_are_explicit = "action_keys" in config_data
     if not presets:
         raise ValueError("JSON config must define presets.actions")
-    if not action_keys:
+    if not action_keys and not action_keys_are_explicit:
         first = next(iter(presets.values()))
         if isinstance(first, dict):
             action_keys = list(first.keys())
@@ -248,6 +247,24 @@ def preset_to_action(params: Any, action_keys: list[str]) -> np.ndarray:
             raise ValueError(f"Preset is missing action keys: {missing}")
         return np.asarray([params[key] for key in action_keys], dtype=np.float32)
     return np.asarray(params, dtype=np.float32)
+
+
+def action_for_env(action: np.ndarray, action_keys: list[str], env) -> np.ndarray:
+    """Append the fixed zero-roll channel expected by the 3D eel environment."""
+    expected_dim = int(env.action_space.shape[-1])
+    if action.shape[-1] == expected_dim:
+        return action
+    if "roll" not in action_keys and action.shape[-1] + 1 == expected_dim:
+        return np.pad(action, ((0, 0), (0, 1)), constant_values=0.0)
+    raise ValueError(
+        f"Configured action has {action.shape[-1]} channels but the environment "
+        f"expects {expected_dim}"
+    )
+
+
+def reynolds_viscosity(reynolds: float, velocity: float, diameter: float) -> float:
+    """Return lattice viscosity from ``Re = U D / nu``."""
+    return float(velocity) * float(diameter) / max(float(reynolds), 1.0e-6)
 
 
 def build_runtime_config(config_data: Dict[str, Any], overrides: Dict[str, Any]) -> SimpleNamespace:
@@ -298,10 +315,13 @@ def choose_idle_preset(presets: Dict[str, dict]) -> str:
     return next(iter(presets))
 
 
-def build_keymap(presets: Dict[str, dict], controls: Optional[Dict[str, str]] = None) -> Dict[int, str]:
-    if controls:
+def build_keymap(
+    presets: Dict[str, dict],
+    keyboard_control: Optional[Dict[str, str]] = None,
+) -> Dict[int, str]:
+    if keyboard_control:
         mapping: Dict[int, str] = {}
-        for key_name, preset_name in controls.items():
+        for key_name, preset_name in keyboard_control.items():
             if len(key_name) != 1 or preset_name not in presets:
                 continue
             mapping[ord(key_name.lower())] = preset_name
@@ -320,10 +340,6 @@ def build_keymap(presets: Dict[str, dict], controls: Optional[Dict[str, str]] = 
         ord("F"): "fast",
         ord("s"): idle,
         ord("S"): idle,
-        ord("z"): "ascend",
-        ord("Z"): "ascend",
-        ord("c"): "descend",
-        ord("C"): "descend",
     }
     return {k: v for k, v in mapping.items() if v in presets}
 
@@ -375,8 +391,6 @@ def draw_overlay(
         f"animal: {animal}  mode: {mode}  task: {task} {'[PAUSED]' if paused else ''}",
         f"step: {step}  reward: {reward:+.4f}  fps: {fps:.1f}",
         f"action: [{action_str}]",
-        # "W forward | A left | D right | F fast | S idle | Z ascend | C descend",
-        # "Space pause | R reset | Q/Esc quit",
     ]
     x, y0 = 12, 24
     for i, text in enumerate(lines):
@@ -417,6 +431,64 @@ def draw_live_lbm_hud(
         cv2.putText(hud, line, (4, y), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255, 255), 3, cv2.LINE_AA)
         cv2.putText(hud, line, (4, y), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (18, 18, 18, 255), 1, cv2.LINE_AA)
     return hud
+
+
+def draw_karman_lbm_hud(
+    step: int,
+    fps: float,
+    paused: bool,
+    reynolds: float,
+) -> np.ndarray:
+    """Create a compact Karman-only overlay without control-policy labels."""
+    width, height = 500, 54
+    hud = np.zeros((height, width, 4), dtype=np.uint8)
+    lines = [
+        f"3D Karman flow {'[PAUSED]' if paused else ''}",
+        f"step: {step}  Re: {reynolds:.0f}  fps: {fps:.1f} | +/- Re | Space/R/Q",
+    ]
+    for line_index, line in enumerate(lines):
+        y = 20 + line_index * 24
+        cv2.putText(hud, line, (4, y), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (255, 255, 255, 255), 3, cv2.LINE_AA)
+        cv2.putText(hud, line, (4, y), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (18, 18, 18, 255), 1, cv2.LINE_AA)
+    return hud
+
+
+def draw_karman_reynolds_panel(
+    width: int,
+    height: int,
+    step: int,
+    fps: float,
+    paused: bool,
+    reynolds_info: Dict[str, float],
+) -> np.ndarray:
+    """Draw the simplified realtime Reynolds-number panel for Karman flow."""
+    panel = np.full((height, width, 3), (18, 20, 24), dtype=np.uint8)
+    cv2.rectangle(panel, (0, 0), (width - 1, height - 1), (52, 58, 68), 1)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    reynolds = float(reynolds_info["re"])
+    viscosity = float(reynolds_info["viscosity"])
+    velocity = float(reynolds_info["velocity"])
+    diameter = float(reynolds_info["diameter"])
+    reynolds_step = float(reynolds_info["step"])
+
+    cv2.putText(
+        panel,
+        f"Karman flow {'[PAUSED]' if paused else ''}",
+        (18, 38),
+        font,
+        0.72,
+        (235, 238, 245),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(panel, f"step={step}  fps={fps:.1f}", (18, 70), font, 0.48, (180, 190, 205), 1, cv2.LINE_AA)
+    cv2.putText(panel, "Reynolds number", (18, 132), font, 0.60, (220, 225, 235), 1, cv2.LINE_AA)
+    cv2.putText(panel, f"Re = {reynolds:.0f}", (18, 178), font, 1.02, (90, 205, 255), 2, cv2.LINE_AA)
+    cv2.putText(panel, f"nu = {viscosity:.5f}", (18, 218), font, 0.55, (190, 205, 230), 1, cv2.LINE_AA)
+    cv2.putText(panel, f"U = {velocity:.3f}   D = {diameter:.1f}", (18, 250), font, 0.50, (170, 185, 205), 1, cv2.LINE_AA)
+    cv2.putText(panel, f"+/- adjust Re by {reynolds_step:.0f}", (18, 300), font, 0.52, (215, 220, 230), 1, cv2.LINE_AA)
+    cv2.putText(panel, "Space pause | R reset | Q/Esc quit", (18, height - 24), font, 0.40, (180, 190, 205), 1, cv2.LINE_AA)
+    return panel
 
 
 def live_action_panel_layout(width: int, height: int, action_count: int) -> Dict[str, Any]:
@@ -521,7 +593,7 @@ def set_task_if_supported(env, task_name: str) -> None:
         return
     task_names = getattr(base_env, "TASK_NAMES", None)
     if task_names is None:
-        task_names = ["forward", "turn_left", "turn_right", "ascend", "descend"]
+        task_names = ["forward", "turn_left", "turn_right"]
     if task_name not in task_names:
         return
     task_id = task_names.index(task_name)
@@ -1391,7 +1463,7 @@ def export_lbm_video(env, args, presets: Dict[str, dict], action_keys: list[str]
     for step_idx in range(args.export_steps):
         ramp = min(1.0, (step_idx + 1) / max(1, args.warmup_steps))
         action = np.clip(action_target * ramp, -1.0, 1.0).astype(np.float32)
-        _obs, rewards, _dones, _infos = env.step(action)
+        _obs, rewards, _dones, _infos = env.step(action_for_env(action, action_keys, env))
         reward = float(rewards[0])
         total_reward += reward
 
@@ -1531,6 +1603,40 @@ def main() -> None:
     config_path = resolve_config_path(args.config, args.animal)
     config_data = load_json_config(config_path)
     args.animal = str(config_data.get("animal", args.animal))
+    model_cfg = dict(config_data.get("model", {}))
+    lbm_cfg = dict(config_data.get("lbm", {}))
+    flow_cfg = dict(lbm_cfg.get("flow", {}))
+    reynolds_cfg = dict(flow_cfg.get("reynolds_control", {}))
+    reynolds_enabled = bool(reynolds_cfg.get("enabled", False))
+    inlet_velocity = flow_cfg.get("initial_velocity", [0.0, 0.0, 0.0])
+    reynolds_velocity = float(reynolds_cfg.get("velocity", inlet_velocity[0]))
+    reynolds_diameter = float(reynolds_cfg.get("diameter", 1.0))
+    configured_viscosity = float(flow_cfg.get("viscosity", 0.1))
+    current_reynolds = float(
+        reynolds_cfg.get(
+            "value",
+            reynolds_velocity * reynolds_diameter / max(configured_viscosity, 1.0e-6),
+        )
+    )
+    reynolds_min = float(reynolds_cfg.get("min", 1.0))
+    reynolds_max = float(reynolds_cfg.get("max", 1000.0))
+    reynolds_step = float(reynolds_cfg.get("step", 10.0))
+    current_viscosity = (
+        reynolds_viscosity(current_reynolds, reynolds_velocity, reynolds_diameter)
+        if reynolds_enabled
+        else configured_viscosity
+    )
+    if reynolds_enabled and not (
+        reynolds_velocity > 0.0
+        and reynolds_diameter > 0.0
+        and 0.0 < reynolds_min <= current_reynolds <= reynolds_max
+        and reynolds_step > 0.0
+    ):
+        raise ValueError(
+            "reynolds_control requires positive velocity, diameter, and step, "
+            "with min <= value <= max"
+        )
+    is_karman = str(model_cfg.get("env_type", "")).lower() == "karman3d"
     presets, action_keys = get_preset_section(config_data)
     control_cfg = dict(config_data.get("control", {}))
     if args.warmup_steps is None:
@@ -1540,17 +1646,17 @@ def main() -> None:
     task_by_preset = dict(DEFAULT_TASK_BY_PRESET)
 
     task_by_preset.update(control_cfg.get("task_by_preset", {}))
-    keymap = build_keymap(presets, config_data.get("controls"))
+    keymap = build_keymap(presets, config_data.get("keyboard_control"))
 
     mode = args.preset or control_cfg.get("start_mode") or choose_idle_preset(presets)
     if mode not in presets:
         raise ValueError(f"Unknown preset '{mode}'. Choices: {list(presets.keys())}")
 
     if args.dry_run:
-        model_cfg = config_data.get("model", {})
         print(
             f"config={config_path}, animal={args.animal}, env_type={model_cfg.get('env_type')}, "
-            f"action_keys={action_keys}, presets={list(presets.keys())}"
+            f"action_keys={action_keys}, presets={list(presets.keys())}, "
+            f"reynolds={current_reynolds if reynolds_enabled else 'disabled'}"
         )
         return
     if args.view_mode == "orbit" and not args.export_lbm and not args.no_render:
@@ -1558,11 +1664,24 @@ def main() -> None:
         if args.volume_render_mode != "slices":
             raise ValueError("Live --view-mode orbit currently supports --volume-render-mode slices only")
         if args.per_frame_steps is None:
-            # The eel export preset uses 10 coupled substeps per captured video frame.
-            # A live preview uses a smaller batch so controls and rendering stay near
-            # 30 FPS; callers can still request the export cadence explicitly.
-            args.per_frame_steps = 2
-            print("[live-orbit] using --per-frame-steps 2 for realtime preview (override explicitly to change it)")
+            if is_karman:
+                # Karman has no articulated-body controls that require a low-latency
+                # preview. Honor its configured batch size so the wake develops in
+                # less wall-clock time.
+                args.per_frame_steps = int(lbm_cfg.get("per_frame_steps", 5))
+                print(
+                    f"[live-orbit] using configured --per-frame-steps {args.per_frame_steps} "
+                    "for faster Karman wake development"
+                )
+            else:
+                # The eel export preset uses 10 coupled substeps per captured video
+                # frame. A live preview uses a smaller batch so controls and rendering
+                # stay responsive; callers can request another cadence explicitly.
+                args.per_frame_steps = 2
+                print(
+                    "[live-orbit] using --per-frame-steps 2 for realtime preview "
+                    "(override explicitly to change it)"
+                )
 
     overrides = {}
 
@@ -1577,6 +1696,10 @@ def main() -> None:
     del obs
 
     base_env = env._env
+    if reynolds_enabled:
+        if not hasattr(base_env, "set_viscosity"):
+            raise ValueError("lbm.flow.reynolds_control requires an environment with set_viscosity()")
+        base_env.set_viscosity(current_viscosity)
 
     if args.export_lbm:
         export_lbm_video(env, args, presets, action_keys, task_by_preset, mode)
@@ -1601,7 +1724,7 @@ def main() -> None:
             step_start = time.perf_counter()
             ramp = min(1.0, (step_idx + 1) / max(1, args.warmup_steps))
             action = np.clip(action_target * ramp, -1.0, 1.0).astype(np.float32)
-            _obs, rewards, _dones, _infos = env.step(action)
+            _obs, rewards, _dones, _infos = env.step(action_for_env(action, action_keys, env))
             total_reward += float(rewards[0])
             if args.benchmark_progress_every > 0 and (
                 (step_idx + 1) == 1 or (step_idx + 1) % args.benchmark_progress_every == 0
@@ -1665,7 +1788,11 @@ def main() -> None:
     last_action = np.zeros_like(preset_to_action(presets[mode], action_keys).reshape(1, -1), dtype=np.float32)
     manual_action_override: Optional[np.ndarray] = None
     transition_from = last_action.copy()
-    controls_line = "W forward | A left | D right | F fast | S idle | Z/C vertical"
+    controls_line = (
+        "+/- Reynolds | Space pause | R reset | Q/Esc quit"
+        if reynolds_enabled
+        else "W forward | A left | D right | F fast | S idle"
+    )
     initial_solid_position = (
         flow.solid_position.numpy()[0].astype(np.float32).copy()
         if live_slice_display is not None and flow.solid_position.shape[0] > 0
@@ -1677,7 +1804,10 @@ def main() -> None:
 
     fps = 0.0
 
-    print("Controls: W forward | A left | D right | F fast | S idle | Z ascend | C descend | Space pause | R reset | Q/Esc quit")
+    if reynolds_enabled:
+        print("Controls: +/- Reynolds | Space pause | R reset | Q/Esc quit")
+    else:
+        print("Controls: W forward | A left | D right | F fast | S idle | Space pause | R reset | Q/Esc quit")
 
     try:
         while True:
@@ -1703,7 +1833,7 @@ def main() -> None:
                         ramp = min(1.0, (mode_step + 1) / max(1, args.warmup_steps))
                         action = action_target * ramp
                 action = np.clip(action.astype(np.float32), -1.0, 1.0)
-                _obs, rewards, _dones, _infos = env.step(action)
+                _obs, rewards, _dones, _infos = env.step(action_for_env(action, action_keys, env))
                 last_reward = float(rewards[0])
                 last_action = action
                 step += 1
@@ -1718,7 +1848,25 @@ def main() -> None:
             if live_slice_display is not None:
                 live_slice_display.update_lbm_texture()
                 display_mode = f"{mode}/mouse" if manual_action_override is not None else mode
-                if mj_frame is not None:
+                reynolds_info = None
+                if reynolds_enabled:
+                    reynolds_info = {
+                        "re": current_reynolds,
+                        "viscosity": current_viscosity,
+                        "velocity": reynolds_velocity,
+                        "diameter": reynolds_diameter,
+                        "step": reynolds_step,
+                    }
+                if is_karman and reynolds_info is not None:
+                    right_frame = draw_karman_reynolds_panel(
+                        args.action_panel_width,
+                        args.output_height,
+                        step,
+                        fps,
+                        paused,
+                        reynolds_info,
+                    )
+                elif mj_frame is not None:
                     right_frame = draw_overlay(
                         mj_frame, args.animal, display_mode, task, step, last_action, last_reward, fps, paused
                     )
@@ -1739,25 +1887,40 @@ def main() -> None:
                     )
                 current_solid_position = flow.solid_position.numpy()[0].astype(np.float32)
                 displacement = current_solid_position - initial_solid_position
-                hud = draw_live_lbm_hud(
-                    display_mode,
-                    task,
-                    step,
-                    mode_step,
-                    last_action,
-                    displacement,
-                    last_reward,
-                    fps,
-                    float(live_slice_display.vmax),
-                    paused,
-                    controls_line,
+                if is_karman and reynolds_info is not None:
+                    hud = draw_karman_lbm_hud(
+                        step,
+                        fps,
+                        paused,
+                        current_reynolds,
+                    )
+                else:
+                    hud = draw_live_lbm_hud(
+                        display_mode,
+                        task,
+                        step,
+                        mode_step,
+                        last_action,
+                        displacement,
+                        last_reward,
+                        fps,
+                        float(live_slice_display.vmax),
+                        paused,
+                        controls_line,
+                    )
+                window_title = (
+                    f"3D Karman | Re={current_reynolds:.0f} | {fps:.1f} FPS"
+                    if is_karman and reynolds_enabled
+                    else f"{args.window_name} | {mode} | {fps:.1f} FPS | vmax={live_slice_display.vmax:.3g}"
                 )
                 live_slice_display.draw(
                     right_frame,
                     hud,
-                    f"{args.window_name} | {mode} | {fps:.1f} FPS | vmax={live_slice_display.vmax:.3g}",
+                    window_title,
                 )
-                action_edits = live_slice_display.pop_action_edits()
+                action_edits = (
+                    {} if is_karman else live_slice_display.pop_action_edits()
+                )
                 if action_edits:
                     if manual_action_override is None:
                         manual_action_override = last_action.copy()
@@ -1788,6 +1951,16 @@ def main() -> None:
                     key = ord(" ")
                 elif live_slice_display.key_once(glfw.KEY_R):
                     key = ord("r")
+                elif reynolds_enabled and (
+                    live_slice_display.key_once(glfw.KEY_EQUAL)
+                    or live_slice_display.key_once(glfw.KEY_KP_ADD)
+                ):
+                    key = ord("+")
+                elif reynolds_enabled and (
+                    live_slice_display.key_once(glfw.KEY_MINUS)
+                    or live_slice_display.key_once(glfw.KEY_KP_SUBTRACT)
+                ):
+                    key = ord("-")
                 else:
                     for ascii_key in sorted(set(keymap)):
                         if not chr(ascii_key).isalpha() or not chr(ascii_key).islower():
@@ -1806,7 +1979,21 @@ def main() -> None:
                 key = cv2.waitKey(1) & 0xFF
             if key in (27, ord("q"), ord("Q")):
                 break
-            if key == ord(" "):
+            if reynolds_enabled and key in (ord("+"), ord("=")):
+                current_reynolds = min(reynolds_max, current_reynolds + reynolds_step)
+                current_viscosity = reynolds_viscosity(
+                    current_reynolds, reynolds_velocity, reynolds_diameter
+                )
+                base_env.set_viscosity(current_viscosity)
+                print(f"Re={current_reynolds:.0f}, nu={current_viscosity:.6f}")
+            elif reynolds_enabled and key in (ord("-"), ord("_")):
+                current_reynolds = max(reynolds_min, current_reynolds - reynolds_step)
+                current_viscosity = reynolds_viscosity(
+                    current_reynolds, reynolds_velocity, reynolds_diameter
+                )
+                base_env.set_viscosity(current_viscosity)
+                print(f"Re={current_reynolds:.0f}, nu={current_viscosity:.6f}")
+            elif key == ord(" "):
                 paused = not paused
             elif key in (ord("r"), ord("R")):
                 env.reset()

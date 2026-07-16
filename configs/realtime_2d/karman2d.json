@@ -1,7 +1,7 @@
 {
   "name": "karman_vortex_2d_project_solver",
   "env": {
-    "class": "GenericLBM2DEnv",
+    "class": "Karman2DEnv",
     "xml_path": "envs/lbm/karman/karman_cylinder_2d.xml",
     "solid_config": [
       {
@@ -102,7 +102,7 @@
     "transition_steps": 1,
     "start_mode": "steady"
   },
-  "controls": {
+  "keyboard_control": {
     "x": "steady"
   },
 

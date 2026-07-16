@@ -1,21 +1,61 @@
-from .lbm_func import *
-from .lbm_core import HomeFlow
+"""High-level two-dimensional LBM solver with parallel-world support."""
+
+from typing import Any, Dict, Optional, Sequence, Tuple
+
 import numpy as np
-import mujoco
-import mujoco_warp as mjw
-from typing import Optional, Tuple, Dict
+import warp as wp
+
+from .lbm_core import HomeFlow
+from .lbm_func import (
+    InitBoundary,
+    InitFlow,
+    Swap_Mom,
+    apply_bc,
+    init_force,
+    precompute_transformed_segments,
+    stream_and_collide,
+)
 from .mujoco_to_lbm import extract_lbm_polygon_from_mujoco
 
+
 class LBM_Solver:
-    def __init__(self, nx: int, ny: int, solid_num: int = 1, nworld: int = 1, device=None):
-        '''Initialize the LBM solver for multiple worlds.
-        
+    """Advance one or more D2Q9 fluid worlds on a Warp device.
+
+    Args:
+        nx: Number of lattice cells along the x axis.
+        ny: Number of lattice cells along the y axis.
+        solid_num: Number of immersed solids per world.
+        nworld: Number of worlds stepped together.
+        device: Warp device name or device object. Defaults to Warp's preferred
+            device.
+
+    Attributes:
+        flows: Per-world :class:`~envs.lbm.lbm_core.HomeFlow` objects.
+        device: Warp device used for kernel launches.
+        mujoco_mappings: Coordinate mappings created for immersed solids.
+
+    Notes:
+        The class name is retained for compatibility with existing configs.
+    """
+
+    def __init__(
+        self,
+        nx: int,
+        ny: int,
+        solid_num: int = 1,
+        nworld: int = 1,
+        device: Optional[Any] = None,
+    ) -> None:
+        """Initialize fluid fields, boundaries, and batch metadata.
+
         Args:
-            nx, ny: Grid dimensions
-            solid_num: Number of solid objects
-            nworld: Number of parallel worlds (default: 1)
-            device: Warp device to use
-        '''
+            nx: Number of lattice cells along the x axis.
+            ny: Number of lattice cells along the y axis.
+            solid_num: Number of immersed solids per world.
+            nworld: Number of parallel simulation worlds.
+            device: Warp device name or object. Uses the preferred device when
+                omitted.
+        """
         self.nx = nx
         self.ny = ny
         self.solid_num = solid_num
@@ -54,8 +94,13 @@ class LBM_Solver:
         
         self.solid_id_to_index = {}  # {solid_id: index in arrays}
 
-    def step(self):
-        """Perform a single time step for all worlds using batch kernels."""
+    def step(self) -> None:
+        """Advance every world by one LBM time step.
+
+        The first call captures the stream/collide and boundary-condition
+        kernels into a Warp graph. Later calls replay that graph. Hydrodynamic
+        forces are cleared before each step.
+        """
         for flow in self.flows:
             init_force(flow)
         if not self.captured:
@@ -97,19 +142,37 @@ class LBM_Solver:
 
     def create_solid_from_mujoco(self,
                                  solid_id: int,
-                                 model,  # mjw.MjModel (Warp) or mujoco.MjModel
-                                 data,  # mjw.MjData (Warp) or mujoco.MjData
+                                 model: Any,
+                                 data: Any,
                                  body_or_geom_name: str,
                                  lbm_position: Optional[Tuple[float, float]] = None,
                                  lbm_scale: Optional[float] = 0.3,
                                  n_samples: int = 20,
                                  is_body: bool = True,
-                                 **kwargs) -> Dict:
-        """
-        Create LBM solid from MuJoCo model for all worlds
-        
-        Note: model and data can be mujoco_warp or original mujoco types
-        Internal conversion will be performed as needed
+                                 **kwargs: Any) -> Dict[str, Any]:
+        """Project one 3D MuJoCo body or geometry into every 2D LBM world.
+
+        Args:
+            solid_id: Object index in ``[0, solid_num)``.
+            model: MuJoCo or MuJoCo-Warp model containing the source body or
+                geometry.
+            data: State associated with ``model``.
+            body_or_geom_name: MuJoCo body or geometry name to project.
+            lbm_position: Initial ``(x, y)`` center in lattice coordinates.
+                Defaults to the grid center.
+            lbm_scale: MuJoCo-to-LBM scale relative to ``nx``.
+            n_samples: Number of vertices in the resampled polygon.
+            is_body: Interpret ``body_or_geom_name`` as a body when true and a
+                geometry when false.
+            **kwargs: Additional solid properties forwarded to
+                :meth:`HomeFlow.configure_solid`.
+
+        Returns:
+            Planar projection metadata including normalized polygon vertices,
+            source position, and orientation.
+
+        Notes:
+            Call :meth:`finalize_mappings` after all solids have been created.
         """
         # Extract polygon information (this function needs original MuJoCo objects)
         polygon_info = extract_lbm_polygon_from_mujoco(
@@ -145,12 +208,16 @@ class LBM_Solver:
         
         return polygon_info
     
-    def finalize_mappings(self, solid_ids: list):
-        """
-        Complete all solid creation and create Warp arrays for batch operations
+    def finalize_mappings(self, solid_ids: Sequence[int]) -> None:
+        """Finalize coordinate-mapping arrays for batch coupling.
         
         Args:
-            solid_ids: List of solid IDs to use (in order)
+            solid_ids: Solid IDs in the same order used by the MuJoCo coupling
+                buffers.
+
+        Raises:
+            ValueError: If a requested solid was not created through
+                :meth:`create_solid_from_mujoco`.
         """
         self.n = len(solid_ids)
         

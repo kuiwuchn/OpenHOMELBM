@@ -5,8 +5,8 @@ The config selects the MuJoCo XML/environment, LBM parameters, render/camera
 settings, keyboard bindings, and action presets.
 
 Example:
-    python tools/lbm2d_realtime_control.py --config configs/realtime_2d/fish2d.json
-    python tools/lbm2d_realtime_control.py --config configs/realtime_2d/fish2d.json --record outputs/fish2d_realtime.mp4
+    python tools/lbm2d_realtime_control.py --config configs/realtime_2d/eel2d.json
+    python tools/lbm2d_realtime_control.py --config configs/realtime_2d/karman2d.json
 
 """
 
@@ -32,10 +32,63 @@ if str(SCRIPT_DIR) not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(1, str(PROJECT_ROOT))
 
-from envs.lbm import ButterflyLBMEnv, FishLBMEnv, FishObstacleLBMEnv, LBMFluidEnv, StarfishLBMEnv
+from envs.lbm import Eel2DLBMEnv, Karman2DEnv, LBMFluidEnv
 from envs.lbm.lbm_core import HomeFlow
 from envs.lbm.lbm_func import get_solid_boundary_img, get_u_img, get_vorticity_with_solid_img
-from lbm_wave_tester_2d import get_raw_frame_2d, raw_to_rgb
+
+
+def get_raw_frame_2d(
+    env: LBMFluidEnv,
+    render_type: str = "vorticity",
+    world_idx: int = 0,
+) -> np.ndarray:
+    """Read one raw LBM scalar field as an ``(ny, nx)`` array."""
+    flow = env.solver.flows[world_idx]
+    if render_type == "vorticity":
+        wp.launch(
+            get_vorticity_with_solid_img,
+            dim=(flow.nx, flow.ny),
+            inputs=[flow, 1.0],
+        )
+    elif render_type == "solid_boundary":
+        wp.launch(
+            get_solid_boundary_img,
+            dim=(flow.nx, flow.ny),
+            inputs=[flow, 1.0],
+        )
+    else:
+        wp.launch(get_u_img, dim=(flow.nx, flow.ny), inputs=[flow])
+    wp.synchronize()
+    return np.flipud(flow.u_img.numpy().T)
+
+
+def raw_to_rgb(
+    raw: np.ndarray,
+    vmax: float,
+    render_type: str = "vorticity",
+) -> np.ndarray:
+    """Convert a raw scalar field to an RGB ``uint8`` frame."""
+    import matplotlib.pyplot as plt
+
+    if render_type == "solid_boundary":
+        image = np.clip(raw, 0.0, 1.0)
+        return (plt.get_cmap("gray_r")(image)[:, :, :3] * 255).astype(np.uint8)
+    if render_type == "vorticity":
+        solid_mask = raw >= 999.0
+        fluid = raw.copy()
+        fluid[solid_mask] = 0.0
+        normalized = np.clip(
+            (fluid / max(vmax, 1.0e-8) + 1.0) * 0.5,
+            0.0,
+            1.0,
+        )
+        rgb = (plt.get_cmap("RdBu_r")(normalized)[:, :, :3] * 255).astype(
+            np.uint8
+        )
+        rgb[solid_mask] = np.array([200, 200, 200], dtype=np.uint8)
+        return rgb
+    normalized = np.clip(raw / max(vmax, 1.0e-8), 0.0, 1.0)
+    return (plt.get_cmap("magma")(normalized)[:, :, :3] * 255).astype(np.uint8)
 
 
 
@@ -203,64 +256,10 @@ def apply_lbm_flow_config(env: Any, flow_cfg: Optional[Dict[str, Any]]) -> None:
         wp.synchronize()
 
 
-class GenericLBM2DEnv(LBMFluidEnv):
-    """Generic 2D LBM wrapper for arbitrary MuJoCo XML + solid_config.
-
-    This is for realtime demos only: it runs the same MuJoCo-Warp <-> 2D LBM
-    coupling as the training envs, but uses zero reward and never terminates.
-    """
-
-    def __init__(
-        self,
-        *args,
-        flow_config: Optional[Dict[str, Any]] = None,
-        prescribed_motion: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ):
-        self.flow_config = flow_config or {}
-        self.prescribed_motion = prescribed_motion or {}
-        super().__init__(*args, **kwargs)
-
-    def reset(self, *args, **kwargs):
-        obs = super().reset(*args, **kwargs)
-        apply_lbm_flow_config(self, self.flow_config)
-        return obs
-
-    def _simulation_step(self):
-        if not self.prescribed_motion.get("enabled", False):
-            return super()._simulation_step()
-
-        solid_id = int(self.prescribed_motion.get("solid_id", 0))
-        velocity = self.prescribed_motion.get("velocity", [0.0, 0.0])
-        vx = float(velocity[0])
-        vy = float(velocity[1])
-        omega = float(self.prescribed_motion.get("angular_velocity", 0.0))
-        for _ in range(self.per_frame_steps):
-            wp.launch(
-                advance_prescribed_solid_motion_kernel,
-                dim=self.nworld,
-                inputs=[self.solver.flows_wp, solid_id, vx, vy, omega],
-                device=self.solver.device,
-            )
-            self.solver.step()
-            wp.synchronize()
-
-    def _compute_reward(self, instability_mask=None):
-        return np.zeros(self.nworld, dtype=np.float32)
-
-    def _is_terminated(self, instability_mask=None):
-        return np.zeros(self.nworld, dtype=bool)
-
-
-
-
 ENV_CLASSES = {
 
-    "GenericLBM2DEnv": GenericLBM2DEnv,
-    "FishLBMEnv": FishLBMEnv,
-    "FishObstacleLBMEnv": FishObstacleLBMEnv,
-    "ButterflyLBMEnv": ButterflyLBMEnv,
-    "StarfishLBMEnv": StarfishLBMEnv,
+    "Eel2DLBMEnv": Eel2DLBMEnv,
+    "Karman2DEnv": Karman2DEnv,
 }
 
 
@@ -302,9 +301,9 @@ def key_to_code(key: str) -> int:
     raise ValueError(f"Unsupported key name: {key}")
 
 
-def build_keymap(controls_cfg: Dict[str, str]) -> Dict[int, str]:
+def build_keymap(keyboard_control_cfg: Dict[str, str]) -> Dict[int, str]:
     keymap: Dict[int, str] = {}
-    for key, mode in controls_cfg.items():
+    for key, mode in keyboard_control_cfg.items():
         code = key_to_code(key)
         keymap[code] = mode
         if len(key) == 1 and key.isalpha():
@@ -312,8 +311,8 @@ def build_keymap(controls_cfg: Dict[str, str]) -> Dict[int, str]:
     return keymap
 
 
-def controls_help(controls_cfg: Dict[str, str]) -> str:
-    return " | ".join(f"{k.upper()} {v}" for k, v in controls_cfg.items())
+def controls_help(keyboard_control_cfg: Dict[str, str]) -> str:
+    return " | ".join(f"{k.upper()} {v}" for k, v in keyboard_control_cfg.items())
 
 
 def preset_action(
@@ -377,7 +376,7 @@ def preset_action(
     components = preset.get("components")
 
     if components is None:
-        # Backward-compatible compact fish form: amp/freq/phase_lag/bias1/bias2/tail_ratio.
+        # Backward-compatible compact sine form.
         if action_dim != 2:
             raise ValueError("compact sine preset only supports 2 actuators; use components for generic models")
         amp = float(preset.get("amp", 0.0))
@@ -977,7 +976,7 @@ def instantiate_env(config: Dict[str, Any], config_dir: pathlib.Path, cli_args: 
 
     env_cfg = config.get("env", {})
     lbm_cfg = config.get("lbm", {})
-    env_class_name = env_cfg.get("class", "FishLBMEnv")
+    env_class_name = env_cfg.get("class", "Eel2DLBMEnv")
     if env_class_name not in ENV_CLASSES:
         raise ValueError(f"Unsupported env class '{env_class_name}'. Choices: {list(ENV_CLASSES)}")
 
@@ -994,7 +993,7 @@ def instantiate_env(config: Dict[str, Any], config_dir: pathlib.Path, cli_args: 
         per_frame_steps=cli_args.per_frame_steps if cli_args.per_frame_steps is not None else int(lbm_cfg.get("per_frame_steps", 10)),
         render_mode=None,
     )
-    if env_class_name == "GenericLBM2DEnv":
+    if env_class_name == "Karman2DEnv":
         kwargs["flow_config"] = lbm_cfg.get("flow")
         kwargs["prescribed_motion"] = env_cfg.get("prescribed_motion")
 
@@ -1010,7 +1009,7 @@ def instantiate_env(config: Dict[str, Any], config_dir: pathlib.Path, cli_args: 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="JSON-driven 2D realtime LBM + MuJoCo OpenGL control demo")
-    parser.add_argument("--config", type=str, default="configs/realtime_2d/fish2d.json")
+    parser.add_argument("--config", type=str, default="configs/realtime_2d/eel2d.json")
     parser.add_argument("--nx", type=int, default=None)
     parser.add_argument("--ny", type=int, default=None)
     parser.add_argument("--lbm-scale", type=float, default=None)
@@ -1045,7 +1044,7 @@ def main() -> None:
     render_cfg = config.get("render", {})
     camera_cfg = config.get("camera", {})
     control_cfg = config.get("control", {})
-    controls_cfg = config.get("controls", {})
+    keyboard_control_cfg = config.get("keyboard_control", {})
     run_cfg = config.get("run", {})
     lbm_cfg = config.get("lbm", {})
     flow_cfg = lbm_cfg.get("flow", {})
@@ -1065,8 +1064,8 @@ def main() -> None:
 
     if not presets:
         raise ValueError("Config must contain a non-empty 'presets' object")
-    if not controls_cfg:
-        raise ValueError("Config must contain keyboard 'controls'")
+    if not keyboard_control_cfg:
+        raise ValueError("Config must contain a non-empty 'keyboard_control' object")
 
     env = instantiate_env(config, config_dir, args)
     env.reset()
@@ -1103,8 +1102,8 @@ def main() -> None:
     if start_mode not in presets:
         raise ValueError(f"start_mode '{start_mode}' not found in presets")
 
-    keymap = build_keymap(controls_cfg)
-    controls_line = controls_help(controls_cfg)
+    keymap = build_keymap(keyboard_control_cfg)
+    controls_line = controls_help(keyboard_control_cfg)
     manual_solid_cfg = config.get("env", {}).get("manual_solid_control", {})
     manual_solid_enabled = bool(manual_solid_cfg.get("enabled", False))
     manual_solid_id = int(manual_solid_cfg.get("solid_id", 0))
@@ -1214,7 +1213,6 @@ def main() -> None:
                         move = delta * min(1.0, manual_solid_smooth_speed / dist)
                         move_lbm_solid(env, manual_solid_id, float(move[0]), float(move[1]))
 
-                apply_lbm_runtime_flow_config(env, flow_cfg, step)
                 if args.debug_render:
 
                     print(f"[loop {time.perf_counter():.6f}] env.step begin step={step}", flush=True)

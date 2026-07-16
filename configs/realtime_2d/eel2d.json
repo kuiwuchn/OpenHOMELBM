@@ -1,7 +1,7 @@
 {
   "name": "eel2d_projected",
   "env": {
-    "class": "GenericLBM2DEnv",
+    "class": "Eel2DLBMEnv",
     "xml_path": "envs/lbm3d/eel/eel_3d.xml",
     "solid_config": [
       {"solid_id": 0, "body_id": 1, "body_or_geom_name": "seg1", "lbm_position": [200, 350], "is_body": true},
@@ -50,7 +50,7 @@
     "transition_steps": 36,
     "start_mode": "idle"
   },
-  "controls": {
+  "keyboard_control": {
     "w": "forward",
     "a": "turn_l",
     "d": "turn_r",
@@ -61,8 +61,8 @@
   "presets": {
     "forward": {"type": "eel_wave", "A": 0.28, "omega": -1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": 0.0, "roll": 0.0},
     "fast": {"type": "eel_wave", "A": 0.36, "omega": -1.0, "omega_max": 15.707963268, "k_wave": 0.65, "head_bias": 0.0, "roll": 0.0},
-    "turn_l": {"type": "eel_wave", "A": 0.24, "omega": -1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": 0.18, "roll": 0.0},
-    "turn_r": {"type": "eel_wave", "A": 0.24, "omega": -1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": -0.18, "roll": 0.0},
+    "turn_l": {"type": "eel_wave", "A": 0.24, "omega": -1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": -0.18, "roll": 0.0},
+    "turn_r": {"type": "eel_wave", "A": 0.24, "omega": -1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": 0.18, "roll": 0.0},
     "reverse": {"type": "eel_wave", "A": 0.28, "omega": 1.0, "omega_max": 12.566370614, "k_wave": 0.55, "head_bias": 0.0, "roll": 0.0},
     "idle": {"type": "constant", "values": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
   }

@@ -83,7 +83,9 @@ class LBMFluidEnv3D(gym.Env):
                 is_static=True means the body has no joints and won't receive fluid forces.
             root_link: Name of root link for auto-positioning (optional)
             root_position: LBM grid position of root link (optional, default: center)
-            nx, ny, nz: LBM grid dimensions
+            nx: Number of lattice cells along the x axis.
+            ny: Number of lattice cells along the y axis.
+            nz: Number of lattice cells along the z axis.
             lbm_scale: Scale factor for geometry in LBM grid
             nworld: Number of parallel worlds
             max_episode_steps: Maximum steps per episode
@@ -93,7 +95,7 @@ class LBMFluidEnv3D(gym.Env):
             
         Example (auto-generate with root_link):
             env = LBMFluidEnv3D(
-                mjcf_path='fish.xml',
+                mjcf_path='model.xml',
                 root_link='head',
                 root_position=(32, 45, 32),
             )
@@ -104,7 +106,7 @@ class LBMFluidEnv3D(gym.Env):
                 {'link_name': 'body'},  # lbm_position auto-calculated
                 {'link_name': 'obstacle', 'lbm_position': (32, 80, 32), 'is_static': True},
             ]
-            env = LBMFluidEnv3D(mjcf_path='fish.xml', link_config=link_config)
+            env = LBMFluidEnv3D(mjcf_path='model.xml', link_config=link_config)
         """
         super().__init__()
         
@@ -793,18 +795,28 @@ class LBMFluidEnv3D(gym.Env):
             device=self.device,
         )
     
-    def render(self, mode: str = 'human'):
-        """Render the environment."""
+    def render(self, mode: str = 'human') -> Optional[np.ndarray]:
+        """Render the first world when a renderer is implemented.
+
+        Args:
+            mode: Gym render mode. The base class accepts ``'human'`` and
+                ``'rgb_array'`` but leaves rendering to subclasses or the
+                JSON-driven realtime tools.
+
+        Returns:
+            ``None`` in the base implementation.
+        """
         if mode == 'human':
             pass
         elif mode == 'rgb_array':
             pass
         return None
     
-    def close(self):
-        """Clean up resources."""
+    def close(self) -> None:
+        """Release renderer resources in subclasses."""
         pass
     
     @property
-    def unwrapped(self):
+    def unwrapped(self) -> "LBMFluidEnv3D":
+        """Return the environment without wrapper layers."""
         return self

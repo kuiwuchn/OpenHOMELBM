@@ -34,7 +34,6 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList, Check
 from stable_baselines3.common.monitor import Monitor
 
 from envs.lbm.eel.eel_lbm_env import Eel2DLBMEnv
-from envs.lbm.fish.fish_lbm_env import FishLBMEnv
 from envs.lbm.lbm_core import HomeFlow
 
 from envs.lbm.lbm_func import get_vorticity_with_solid_img
@@ -419,7 +418,7 @@ def _vorticity_rgb_lut() -> np.ndarray:
     return _VORTICITY_RGB_LUT
 
 
-def vorticity_frame(raw_env: FishLBMEnv, height: int = 600, vorticity_vmax: float = 20.0) -> np.ndarray:
+def vorticity_frame(raw_env: Eel2DLBMEnv, height: int = 600, vorticity_vmax: float = 20.0) -> np.ndarray:
     """Render current 2D LBM vorticity as RGB uint8 with a fixed color range."""
 
     flow = raw_env.solver.flows[0]
@@ -445,7 +444,7 @@ def vorticity_frame(raw_env: FishLBMEnv, height: int = 600, vorticity_vmax: floa
     return frame
 
 
-def draw_target_marker(frame: np.ndarray, raw_env: FishLBMEnv) -> None:
+def draw_target_marker(frame: np.ndarray, raw_env: Eel2DLBMEnv) -> None:
     """Overlay the current eel goal in the same coordinates as the LBM image."""
     if getattr(raw_env, "task_mode", "goal") != "goal":
         return
@@ -494,7 +493,7 @@ def _as_vector(value: Any) -> np.ndarray:
     return arr.reshape(-1)
 
 
-def set_lbm_viscosity(env: FishLBMEnv, viscosity: float) -> None:
+def set_lbm_viscosity(env: Eel2DLBMEnv, viscosity: float) -> None:
     for flow in env.solver.flows:
         flow.vis_shear = float(viscosity)
     env.solver.flows_wp = wp.array(env.solver.flows, dtype=HomeFlow, device=env.solver.device)
@@ -502,7 +501,7 @@ def set_lbm_viscosity(env: FishLBMEnv, viscosity: float) -> None:
     env.solver.captured_graph = None
 
 
-def get_lbm_viscosity(env: FishLBMEnv) -> float:
+def get_lbm_viscosity(env: Eel2DLBMEnv) -> float:
     try:
         return float(env.solver.flows[0].vis_shear)
     except Exception:
@@ -849,7 +848,7 @@ class RealtimeLBMCallback(BaseCallback):
 
     def __init__(
         self,
-        raw_env: FishLBMEnv,
+        raw_env: Eel2DLBMEnv,
         every: int = 5,
         height: int = 600,
         panel_width: int = 360,
@@ -981,7 +980,7 @@ class LBMVideoRecorder:
 
     def __init__(
         self,
-        raw_env: FishLBMEnv,
+        raw_env: Eel2DLBMEnv,
         cpg_env: EelCPGWrapper,
         output_path: Path,
         height: int,
@@ -1139,7 +1138,12 @@ def main():
 
     parser = argparse.ArgumentParser(description="Minimal SAC training for LBM-RIGID")
 
-    parser.add_argument("--animal", choices=["fish", "eel"], default="fish", help="2D swimmer to train")
+    parser.add_argument(
+        "--animal",
+        choices=["eel"],
+        default="eel",
+        help="Animal environment to train (only eel is retained)",
+    )
     parser.add_argument(
         "--control-mode",
         choices=["direct", "cpg"],
@@ -1189,10 +1193,6 @@ def main():
     parser.add_argument("--warmup-head-bias-range", type=float, nargs=2, default=[-0.30, 0.30], metavar=("MIN", "MAX"), help="Physical head_bias range used by random CPG warm-up")
     args = parser.parse_args()
 
-    if args.control_mode == "cpg" and args.animal != "eel":
-        parser.error("--control-mode cpg is currently implemented for --animal eel")
-    if args.task == "forward" and args.animal != "eel":
-        parser.error("--task forward is currently implemented for --animal eel")
     if args.eval_only and args.load_model is None:
         parser.error("--eval-only requires --load-model")
     if args.load_model is not None and not args.load_model.exists():
@@ -1226,13 +1226,13 @@ def main():
 
     per_frame_steps = args.per_frame_steps
     if per_frame_steps is None:
-        per_frame_steps = 8 if args.animal == "eel" and args.control_mode == "cpg" else 10
+        per_frame_steps = 8 if args.control_mode == "cpg" else 10
     raw_episode_steps = int(args.episode_steps)
     if args.control_mode == "cpg":
         # Express each episode length in low-level control steps.
         raw_episode_steps *= int(args.cpg_ramp_steps + args.cpg_hold_steps)
 
-    if args.animal == "eel" and args.control_mode == "cpg":
+    if args.control_mode == "cpg":
         # Reuse the projected geometry from the realtime preset.
         project_root = Path(__file__).resolve().parent
         projected_config_path = project_root / "configs" / "realtime_2d" / "eel2d.json"
@@ -1260,8 +1260,7 @@ def main():
             f"per_frame_steps={per_frame_steps}"
         )
     else:
-        env_class = Eel2DLBMEnv if args.animal == "eel" else FishLBMEnv
-        raw_env = env_class(
+        raw_env = Eel2DLBMEnv(
             nworld=1,
             nx=320,
             ny=480,

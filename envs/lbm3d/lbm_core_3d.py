@@ -43,7 +43,12 @@ ML_WALL = wp.constant(wp.int32(2))
 
 @wp.struct
 class HomeFlow3D:
-    """3D LBM flow field data structure for a single world."""
+    """Store D3Q27 fluid and immersed-mesh state for one 3D world.
+
+    Allocate buffers by calling :meth:`Initialize`. Grid arrays use the
+    project-native ``(nx, ny, nz)`` storage order and are allocated on Warp's
+    current device.
+    """
     nx: int
     ny: int
     nz: int
@@ -130,13 +135,16 @@ class HomeFlow3D:
     u_img_xz: wp.array2d(dtype=wp.float32)  # YZ plane (side view from right, x slice)  
     u_img_xz_front: wp.array2d(dtype=wp.float32)  # XZ plane (front view, y slice)
 
-    def Initialize(self, nx, ny, nz, n_objects=1):
-        """
-        Initialize the 3D LBM flow field.
+    def Initialize(
+        self, nx: int, ny: int, nz: int, n_objects: int = 1
+    ) -> None:
+        """Allocate fluid, solid, lattice, and render buffers.
         
         Args:
-            nx, ny, nz: Grid dimensions
-            n_objects: Number of solid objects
+            nx: Number of lattice cells along the x axis.
+            ny: Number of lattice cells along the y axis.
+            nz: Number of lattice cells along the z axis.
+            n_objects: Number of independently tracked solid meshes.
         """
         self.nx, self.ny, self.nz = nx, ny, nz
         self.n_objects = n_objects

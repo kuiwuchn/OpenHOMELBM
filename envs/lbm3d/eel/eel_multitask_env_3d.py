@@ -65,14 +65,11 @@ from .eel_lbm_env_3d import (
 )
 from ..lbm_core_3d import HomeFlow3D
 
-# Reuse generic multi-task Warp kernels from manta (they only depend on qpos/qvel)
-from ..manta.manta_multitask_env_3d import (
+# Shared task definitions and observation kernels are independent of animal geometry.
+from ..multitask import (
     compute_multitask_obs_kernel,
     quat_rotate_vec,
     dot_vec3,
-    directional_reward,
-    positive_reward,
-    soft_penalty,
     TASK_FORWARD,
     TASK_TURN_LEFT,
     TASK_TURN_RIGHT,
@@ -652,7 +649,7 @@ def compute_eel_multitask_reward_kernel(
 
 
 # ============== Eel-specific Goal Reward Kernel (direction-distance) ==============
-# Unlike manta's compute_goal_reward_manta_kernel, this kernel:
+# This eel-specific goal reward kernel:
 #   1. Uses displacement-based velocity (disp_vel) instead of qvel for forward reward
 #      (immune to head oscillation noise in the long eel chain)
 #   2. Uses chord-angle heading (inverse-envelope weighted yaw joints) instead of
@@ -1050,7 +1047,7 @@ class EelMultiTaskEnv(Eel3DLBMEnv):
         reward_w_smooth: float = 0.03,      # highest: serial chain end-effector amplification
         reward_w_offaxis: float = 0.04,     # highest: traveling wave produces lateral force
         # Reference targets / scales (eel-specific, barrel-roll strategy)
-        target_forward_vel: float = 0.12,   # higher than clownfish: 8-segment wave is efficient
+        target_forward_vel: float = 0.12,
         target_yaw_rate: float = 0.08,      # lowest: long body has large turning radius
         target_vertical_vel: float = 0.05,  # barrel-roll vertical: Yaw wave redirected upward
         # Speed-target / direction-distance task options

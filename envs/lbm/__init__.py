@@ -1,22 +1,15 @@
-"""
-LBM (Lattice Boltzmann Method) Fluid Simulation Module
-"""
+"""Public API for two-dimensional LBM fluid-rigid-body environments."""
 
 from .lbm_fluid_env import LBMFluidEnv
-from .butterfly import ButterflyLBMEnv
-from .fish import FishLBMEnv, FishObstacleLBMEnv
-from .starfish import StarfishLBMEnv
+from .eel import Eel2DLBMEnv
+from .karman import Karman2DEnv
 from .lbm_solver import LBM_Solver
 from .lbm_core import HomeFlow
 
 __all__ = [
     'LBMFluidEnv',
-    'ButterflyLBMEnv',
-    'FishLBMEnv',
-    'FishObstacleLBMEnv',
     'Eel2DLBMEnv',
-    'StarfishLBMEnv',
-
+    'Karman2DEnv',
     'LBM_Solver',
     'HomeFlow',
 ]

@@ -1,8 +1,7 @@
 """Lightweight runtime helpers for 3D LBM demos.
 
 This module only provides:
-- optional named config merging for legacy tools
-- multi-task LBM environment construction
+- Eel and Kármán LBM environment construction
 - MuJoCo/LBM visualization helpers
 """
 
@@ -11,46 +10,26 @@ from __future__ import annotations
 
 import pathlib
 import sys
-from types import SimpleNamespace
 from typing import Any, Dict, List
 
 import cv2
 import mujoco
 import numpy as np
 import warp as wp
-from ruamel.yaml import YAML
 
-from envs.lbm3d.lbm_core_3d import HomeFlow3D, cx_d3q27, cy_d3q27, cz_d3q27, w_d3q27
+from envs.lbm3d.lbm_core_3d import (
+    HomeFlow3D,
+    cx_d3q27,
+    cy_d3q27,
+    cz_d3q27,
+    w_d3q27,
+)
+from envs.lbm3d.karman import Karman3DEnv
 
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-
-def _recursive_update(base: Dict[str, Any], update: Dict[str, Any]) -> None:
-    for key, value in update.items():
-        if isinstance(value, dict) and key in base and isinstance(base[key], dict):
-            _recursive_update(base[key], value)
-        else:
-            base[key] = value
-
-
-def load_named_config(config_names, overrides=None, config_path=None):
-    if config_path is None:
-        config_path = PROJECT_ROOT / "configs.yaml"
-    config_path = pathlib.Path(config_path)
-    yaml = YAML(typ="safe", pure=True)
-    configs = yaml.load(config_path.read_text(encoding="utf-8"))
-
-    merged: Dict[str, Any] = {}
-    for name in config_names:
-        if name not in configs:
-            raise KeyError(f"Config section '{name}' not found in {config_path}")
-        _recursive_update(merged, configs[name])
-    if overrides:
-        _recursive_update(merged, overrides)
-    return SimpleNamespace(**merged)
 
 
 @wp.kernel
@@ -225,36 +204,6 @@ def apply_lbm_runtime_flow_config_3d(env, flow_cfg: Dict[str, Any], step: int) -
         )
 
 
-class GenericLBMEnv3D:
-    def __new__(cls, *args, **kwargs):
-        from envs.lbm3d.lbm_fluid_env_3d import LBMFluidEnv3D
-
-        class _GenericLBMEnv3D(LBMFluidEnv3D):
-            def __init__(self, *env_args, flow_config=None, **env_kwargs):
-                self.flow_config = flow_config or {}
-                super().__init__(*env_args, **env_kwargs)
-
-            def reset(self, *reset_args, **reset_kwargs):
-                obs = super().reset(*reset_args, **reset_kwargs)
-                apply_lbm_flow_config_3d(self, self.flow_config)
-                return obs
-
-            def _simulation_step(self):
-                for substep in range(self.per_frame_steps):
-                    step_idx = int(self.step_counts[0]) * self.per_frame_steps + substep
-                    apply_lbm_runtime_flow_config_3d(self, self.flow_config, step_idx)
-                    self.lbm_solver.step()
-                    wp.synchronize()
-
-            def _compute_reward(self, instability_mask=None):
-                return np.zeros(self.nworld, dtype=np.float32)
-
-            def _is_terminated(self, instability_mask=None):
-                return np.zeros(self.nworld, dtype=bool)
-
-        return _GenericLBMEnv3D(*args, **kwargs)
-
-
 class RuntimeVecEnvWrapper:
     """Minimal vector-env adapter used by realtime demos and wave tests."""
 
@@ -303,7 +252,7 @@ class RuntimeVecEnvWrapper:
 
 
 def make_multitask_env(config, nworld=1):
-    env_type = getattr(config, "env_type", "manta_multitask")
+    env_type = getattr(config, "env_type", "eel_multitask")
 
     nx = getattr(config, "lbm_nx", 200)
     ny = getattr(config, "lbm_ny", 200)
@@ -325,27 +274,18 @@ def make_multitask_env(config, nworld=1):
 
 
 
-    if env_type in {"generic_lbm3d", "generic_3d", "karman3d"}:
-        env_class = GenericLBMEnv3D
-    elif env_type == "clownfish_multitask":
-
-        from envs.lbm3d.clownfish.clownfish_multitask_env_3d import ClownfishMultiTaskEnv
-        env_class = ClownfishMultiTaskEnv
-
-    elif env_type == "tuna_multitask":
-        from envs.lbm3d.tuna.tuna_multitask_env_3d import TunaMultiTaskEnv
-        env_class = TunaMultiTaskEnv
+    if env_type == "karman3d":
+        env_class = Karman3DEnv
     elif env_type == "eel_multitask":
         from envs.lbm3d.eel.eel_multitask_env_3d import EelMultiTaskEnv
         env_class = EelMultiTaskEnv
-    elif env_type == "turtle_multitask":
-        from envs.lbm3d.turtle.turtle_multitask_env_3d import TurtleMultiTaskEnv
-        env_class = TurtleMultiTaskEnv
     else:
-        from envs.lbm3d.manta.manta_multitask_env_3d import MantaMultiTaskEnv
-        env_class = MantaMultiTaskEnv
+        raise ValueError(
+            f"Unsupported 3D environment type {env_type!r}; expected "
+            "'eel_multitask' or a generic/Karman environment"
+        )
 
-    if env_type in {"generic_lbm3d", "generic_3d", "karman3d"}:
+    if env_type == "karman3d":
         env_kwargs = {
             "mjcf_path": str(mjcf_path),
             "link_config": link_config,

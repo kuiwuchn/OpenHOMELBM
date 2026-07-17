@@ -12,15 +12,15 @@ projected D2Q9 workflow for fast 2D experiments, a mesh-coupled D3Q27 solver for
 
 ## Demo gallery
 
-| Projected 2D eel | 3D eel vorticity slices |
-| :---: | :---: |
-| [![Projected eel moving through a 2D vorticity field](docs/assets/demos/eel2d.jpg)](outputs/eel_lbm.mp4) | [![Three-dimensional eel surrounded by signed-vorticity slices](docs/assets/demos/eel3d-vorticity.jpg)](outputs/eel_lbm_orbit_slice9.mp4) |
-| [Open MP4](outputs/eel_lbm.mp4) | [Open MP4](outputs/eel_lbm_orbit_slice9.mp4) |
+### 2D Kármán wake
 
-| 2D Kármán vortex street | SAC forward policy |
-| :---: | :---: |
-| [![Alternating Kármán vortex street behind a projected cylinder](docs/assets/demos/karman2d.jpg)](outputs/karman_vortex_2d.mp4) | [![Pretrained SAC eel policy swimming forward](docs/assets/demos/sac-forward.jpg)](outputs/sac_minimal/videos/eel2d_forward_policy.mp4) |
-| [Open MP4](outputs/karman_vortex_2d.mp4) | [Open MP4](outputs/sac_minimal/videos/eel2d_forward_policy.mp4) |
+![Alternating 2D Kármán wake behind a projected cylinder](docs/assets/demos/karman2d.gif)
+
+### SAC forward task
+
+<p align="center">
+  <img src="docs/assets/demos/sac-forward.gif" alt="SAC-trained eel swimming forward" width="320">
+</p>
 
 ## Features
 

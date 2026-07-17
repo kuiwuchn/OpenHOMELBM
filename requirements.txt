@@ -3,6 +3,7 @@ ruamel.yaml
 gym
 mujoco
 opencv-python
+Pillow
 numpy
 trimesh
 scipy

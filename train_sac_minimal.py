@@ -1,4 +1,4 @@
-"""Minimal SAC training for OpenHOMELBM.
+"""Minimal SAC training for Open HOME-LBM.
 
 Install if needed:
     pip install stable-baselines3 gymnasium
@@ -1136,7 +1136,7 @@ def evaluate_loaded_policy(
 
 def main():
 
-    parser = argparse.ArgumentParser(description="Minimal SAC training for OpenHOMELBM")
+    parser = argparse.ArgumentParser(description="Minimal SAC training for Open HOME-LBM")
 
     parser.add_argument(
         "--animal",

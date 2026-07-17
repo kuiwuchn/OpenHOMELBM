@@ -1,4 +1,4 @@
-"""Setuptools configuration for OpenHOMELBM."""
+"""Setuptools configuration for Open HOME-LBM."""
 
 from pathlib import Path
 
@@ -18,7 +18,7 @@ def read_requirements() -> list[str]:
 
 
 setup(
-    name="OpenHOMELBM",
+    name="Open-HOME-LBM",
     version="0.1.0",
     description=(
         "GPU-oriented HOME-LBM environments with MuJoCo-Warp coupling "

@@ -139,7 +139,7 @@ contracts.
 ## Documentation
 
 Read the published documentation at
-[kuiwuchn.github.io/OpenHOMELBM](https://kuiwuchn.github.io/OpenHOMELBM/).
+[Open HOME-LBM documentation](https://kuiwuchn.github.io/OpenHOMELBM/).
 
 | Guide | Purpose |
 | --- | --- |
@@ -164,12 +164,12 @@ train_sac_minimal.py  Minimal SAC training/evaluation entry point
 
 ## License
 
-OpenHOMELBM is distributed under the
+Open HOME-LBM is distributed under the
 [GNU General Public License v3.0 or later](LICENSE) (`GPL-3.0-or-later`).
 
 ## Citation
 
-The numerical foundation and base implementation of OpenHOMELBM come from the
+The numerical foundation and base implementation of Open HOME-LBM come from the
 HOME-LBM paper:
 
 > Wei Li, Tongtong Wang, Zherong Pan, Xifeng Gao, Kui Wu, and Mathieu Desbrun.

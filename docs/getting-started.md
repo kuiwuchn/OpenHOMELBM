@@ -24,9 +24,12 @@ pip install mujoco-warp
 pip install -e .
 ```
 
-The editable installation keeps imports linked to the current checkout. Keep
-the working directory at the repository root when using the relative config
-paths shown in these docs.
+The included `setup.py` defines the project metadata, discovers the Python
+packages under `envs`, reads runtime dependencies from `requirements.txt`, and
+includes the MuJoCo XML assets. The `pip install -e .` command uses this
+configuration for an editable installation, so changes in the checkout are
+available without reinstalling the package. Keep the working directory at the
+repository root when using the relative config paths shown in these docs.
 
 ## Verify the command-line entry points
 

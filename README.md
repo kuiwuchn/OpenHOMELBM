@@ -62,6 +62,12 @@ pip install mujoco-warp
 pip install -e .
 ```
 
+The included `setup.py` defines the project metadata, discovers the Python
+packages under `envs`, reads runtime dependencies from `requirements.txt`, and
+includes the MuJoCo XML assets. The `pip install -e .` command uses this
+configuration for an editable installation, so changes in the checkout are
+available without reinstalling the package.
+
 ## Quick start
 
 ### Realtime projected 2D eel

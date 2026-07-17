@@ -1,5 +1,8 @@
-site_name: LBM-RIGID
-site_description: Differentiable LBM and MuJoCo-Warp environments for fluid-rigid-body control
+site_name: Open HOME-LBM
+site_description: Open HOME-LBM environments with MuJoCo-Warp coupling and SAC training
+site_url: https://kuiwuchn.github.io/OpenHOMELBM/
+repo_name: Open HOME-LBM
+repo_url: https://github.com/kuiwuchn/OpenHOMELBM
 
 theme:
   name: material

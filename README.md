@@ -1,14 +1,18 @@
-# LBM-RIGID
+# Open HOME-LBM
 
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![CUDA](https://img.shields.io/badge/accelerated-CUDA-76B900?logo=nvidia&logoColor=white)
-![Documentation](https://img.shields.io/badge/docs-MkDocs-526CFE?logo=materialformkdocs&logoColor=white)
+[![Documentation](https://img.shields.io/badge/docs-MkDocs-526CFE?logo=materialformkdocs&logoColor=white)](https://kuiwuchn.github.io/OpenHOMELBM/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-LBM-RIGID is a GPU-oriented research simulator for coupling lattice-Boltzmann
-fluid dynamics with three-dimensional MuJoCo-Warp rigid bodies. It supports a
-projected D2Q9 workflow for fast 2D experiments, a mesh-coupled D3Q27 solver for
-3D flow, realtime visualization, and reinforcement-learning control.
+Open HOME-LBM is an open-source research codebase based on the High-Order
+Moment-Encoded Lattice Boltzmann Method (HOME-LBM) introduced by Li et al.
+(2023). It extends the original implementation with MuJoCo-Warp coupled
+environments and realtime demonstrations. It also provides Python scripts for
+training and evaluating SAC controllers for articulated swimmers.
+
+The numerical method and base implementation come from
+[High-Order Moment-Encoded Kinetic Simulation of Turbulent Flows](https://kuiwuchn.github.io/homelbm.html).
 
 ## Demo gallery
 
@@ -24,7 +28,9 @@ projected D2Q9 workflow for fast 2D experiments, a mesh-coupled D3Q27 solver for
 
 ## Features
 
-- **Projected 2D coupling:** D2Q9 HOME-LBM boundaries derived from full 3D
+- **HOME-LBM foundation:** Moment-encoded D2Q9 and D3Q27 fluid solvers running
+  on Warp.
+- **Projected 2D coupling:** D2Q9 boundaries derived from full 3D
   MuJoCo body geometry and motion.
 - **Mesh-coupled 3D flow:** D3Q27 simulation around articulated or static
   immersed meshes.
@@ -53,7 +59,7 @@ conda activate dreamer
 
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install mujoco-warp
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ## Quick start
@@ -112,18 +118,6 @@ python train_sac_minimal.py `
 This command trains the eel on the forward task. Add `--render` for a short
 visual check.
 
-## Checked-in configurations
-
-| Configuration | Scenario |
-| --- | --- |
-| [`configs/realtime_2d/eel2d.json`](configs/realtime_2d/eel2d.json) | Projected articulated eel in D2Q9 flow |
-| [`configs/realtime_2d/karman2d.json`](configs/realtime_2d/karman2d.json) | Projected cylinder and 2D Kármán wake |
-| [`configs/realtime_3d/eel3d.json`](configs/realtime_3d/eel3d.json) | Articulated eel with 3D vorticity rendering |
-| [`configs/realtime_3d/karman3d.json`](configs/realtime_3d/karman3d.json) | Static cylinder in a D3Q27 domain |
-
-The JSON files define model paths, lattice resolution, coupling substeps, flow
-parameters, rendering options, and realtime controls.
-
 ## Python API
 
 The supported high-level imports include:
@@ -138,6 +132,9 @@ contracts.
 
 ## Documentation
 
+Read the published documentation at
+[kuiwuchn.github.io/OpenHOMELBM](https://kuiwuchn.github.io/OpenHOMELBM/).
+
 | Guide | Purpose |
 | --- | --- |
 | [Getting started](docs/getting-started.md) | Installation and first run |
@@ -146,16 +143,6 @@ contracts.
 | [Realtime 3D](docs/examples/realtime-3d.md) | Orbit view and vorticity export |
 | [SAC training](docs/examples/sac-training.md) | Train, load, and export the forward policy |
 | [API reference](docs/api/index.md) | Public Python objects |
-
-Build the documentation locally with:
-
-```powershell
-pip install -r requirements-docs.txt
-mkdocs build --strict
-```
-
-For a live local site, run `mkdocs serve` and open
-`http://127.0.0.1:8000/`.
 
 ## Repository layout
 
@@ -171,5 +158,29 @@ train_sac_minimal.py  Minimal SAC training/evaluation entry point
 
 ## License
 
-LBM-RIGID is distributed under the
+OpenHOMELBM is distributed under the
 [GNU General Public License v3.0 or later](LICENSE) (`GPL-3.0-or-later`).
+
+## Citation
+
+The numerical foundation and base implementation of OpenHOMELBM come from the
+HOME-LBM paper:
+
+> Wei Li, Tongtong Wang, Zherong Pan, Xifeng Gao, Kui Wu, and Mathieu Desbrun.
+> "High-Order Moment-Encoded Kinetic Simulation of Turbulent Flows."
+> *ACM Transactions on Graphics*, 42(6), Article 190, 2023.
+> [HOME-LBM project page](https://kuiwuchn.github.io/homelbm.html) |
+> [DOI: 10.1145/3618341](https://doi.org/10.1145/3618341)
+
+```bibtex
+@article{li2023home,
+  author  = {Li, Wei and Wang, Tongtong and Pan, Zherong and Gao, Xifeng and Wu, Kui and Desbrun, Mathieu},
+  title   = {High-Order Moment-Encoded Kinetic Simulation of Turbulent Flows},
+  journal = {ACM Transactions on Graphics},
+  volume  = {42},
+  number  = {6},
+  articleno = {190},
+  year    = {2023},
+  doi     = {10.1145/3618341}
+}
+```

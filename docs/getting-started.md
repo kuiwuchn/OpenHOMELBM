@@ -11,8 +11,8 @@
 Create and activate an isolated environment:
 
 ```powershell
-conda create -n lbm-rigid python=3.11 -y
-conda activate lbm-rigid
+conda create -n openhomelbm python=3.11 -y
+conda activate openhomelbm
 ```
 
 Install the CUDA build of PyTorch used by the current project setup, then
@@ -21,12 +21,12 @@ MuJoCo Warp and the remaining dependencies:
 ```powershell
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install mujoco-warp
-pip install -r requirements.txt
+pip install -e .
 ```
 
-The project is currently run directly from the repository root rather than
-installed as a wheel. Keep the working directory at the repository root when
-using the commands in these docs.
+The editable installation keeps imports linked to the current checkout. Keep
+the working directory at the repository root when using the relative config
+paths shown in these docs.
 
 ## Verify the command-line entry points
 

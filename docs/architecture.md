@@ -1,8 +1,14 @@
 # Architecture
 
-LBM-RIGID keeps the fluid solver, rigid-body engine, task environment, and
-visualization layers separate enough to reuse the same numerical core across
-interactive demos and reinforcement-learning environments.
+Open HOME-LBM keeps the HOME-LBM fluid solver, rigid-body engine, task
+environment, and visualization layers separate enough to reuse the same
+numerical core across interactive demos and reinforcement-learning
+environments.
+
+The D2Q9 and D3Q27 numerical core is based on the HOME-LBM method introduced in
+[Li et al. (2023)](https://kuiwuchn.github.io/homelbm.html). This page focuses on how
+that solver is organized with MuJoCo-Warp coupling, environments, rendering,
+and training in this repository.
 
 ```mermaid
 flowchart LR
@@ -47,7 +53,7 @@ environments, keyboard presets, rendering options, and optional video exports.
 The training entry point wraps a configured 2D environment for Stable-Baselines3
 SAC.
 
-## Coordinate conventions
+## Coordinates and data layout
 
 - MuJoCo rigid-body dynamics are always three-dimensional.
 - LBM grid positions are expressed in lattice-cell coordinates.

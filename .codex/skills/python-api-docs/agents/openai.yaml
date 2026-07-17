@@ -1,4 +1,0 @@
-interface:
-  display_name: "Python API Docs"
-  short_description: "Polish Python APIs, docs, and demos"
-  default_prompt: "Use $python-api-docs to prepare this Python repository API, documentation, and demos for open-source release."

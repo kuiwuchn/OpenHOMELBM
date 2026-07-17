@@ -20,6 +20,24 @@ SCREENSHOTS = {
     ),
 }
 ANIMATIONS = {
+    "eel2d.gif": (
+        "outputs/eel_lbm.mp4",
+        0.0,
+        4.0,
+        10.0,
+        360,
+        128,
+        0,
+    ),
+    "eel3d-vorticity.gif": (
+        "outputs/eel_lbm_orbit_slice9.mp4",
+        2.0,
+        6.0,
+        10.0,
+        480,
+        128,
+        0,
+    ),
     "karman2d.gif": (
         "outputs/karman_vortex_2d.mp4",
         0.0,

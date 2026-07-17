@@ -17,7 +17,7 @@ Drag to orbit, use the mouse wheel to zoom, press `Space` to pause, `R` to
 reset, and `Q` or `Esc` to quit. Preset keys include `W` for forward, `A`/`D`
 for turns, `F` for fast motion, and `S` for idle.
 
-![Articulated eel inside transparent three-dimensional vorticity slices](../assets/demos/eel3d-vorticity.jpg)
+![Articulated eel inside transparent three-dimensional vorticity slices](../assets/demos/eel3d-vorticity.gif)
 
 *The orbit renderer stacks signed-vorticity slices around the MuJoCo eel while
 the coupled simulation advances on Warp.*

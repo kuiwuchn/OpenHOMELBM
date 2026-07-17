@@ -20,10 +20,10 @@ directory. Output paths are explicit and live under `outputs/`.
 
 | Projected 2D eel | 3D vorticity slices |
 | --- | --- |
-| ![Projected eel moving through a planar vorticity field](../assets/demos/eel2d.jpg) | ![Three-dimensional eel inside signed-vorticity slices](../assets/demos/eel3d-vorticity.jpg) |
+| ![Projected eel moving through a planar vorticity field](../assets/demos/eel2d.gif) | ![Three-dimensional eel inside signed-vorticity slices](../assets/demos/eel3d-vorticity.gif) |
 | Full 3D MuJoCo bodies projected into D2Q9 flow | Mesh-coupled eel in a D3Q27 domain |
 
 | 2D Kármán wake | SAC forward policy |
 | --- | --- |
-| ![Alternating vortices behind a projected cylinder](../assets/demos/karman2d.jpg) | ![Pretrained SAC eel policy swimming forward](../assets/demos/sac-forward.jpg) |
+| ![Alternating vortices behind a projected cylinder](../assets/demos/karman2d.gif) | ![Pretrained SAC eel policy swimming forward](../assets/demos/sac-forward.gif) |
 | Live Reynolds-number control around a fixed cylinder | Train an eel to swim forward with SAC |

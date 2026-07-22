@@ -5,6 +5,9 @@
 [![Documentation](https://img.shields.io/badge/docs-MkDocs-526CFE?logo=materialformkdocs&logoColor=white)](https://kuiwuchn.github.io/OpenHOMELBM/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
+This is the Warp-based HOME-LBM codebase for SIGGRAPH 2026 course
+[Fluid Simulation with the Lattice Boltzmann Method](https://lwkobe.github.io/teachings/lbm-siggraph-2026/).
+
 Open HOME-LBM is an open-source research codebase based on the High-Order
 Moment-Encoded Lattice Boltzmann Method (HOME-LBM) introduced by Li et al.
 (2023). It extends the original implementation with MuJoCo-Warp coupled

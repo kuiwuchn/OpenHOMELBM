@@ -165,6 +165,10 @@ tools/                Realtime, export, and documentation utilities
 train_sac_minimal.py  Minimal SAC training/evaluation entry point
 ```
 
+## Contributor
+
+[Wei Li](https://lwkobe.github.io/), [Xukun Luo](), [Yixin Chen](https://chenyixin1008.github.io/), [Haozhe Su](https://soldierdown.github.io/), [Zherong Pan](https://dyingbrain.github.io/), [Kui Wu](https://kuiwuchn.github.io/)
+
 ## License
 
 Open HOME-LBM is distributed under the

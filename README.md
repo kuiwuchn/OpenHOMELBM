@@ -196,4 +196,21 @@ HOME-LBM paper:
   year    = {2023},
   doi     = {10.1145/3618341}
 }
+@inproceedings{li2026lbmcourse,
+author = {Li, Wei and Lyu, Chaoyang and Liu, Mengyun and Chen, Yixin and Desbrun, Mathieu and Wu, Kui and Liu, Xiaopei},
+title = {Fluid Simulation with the Lattice Boltzmann Method},
+year = {2026},
+isbn = {9798400725432},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3799820.3812493},
+doi = {10.1145/3799820.3812493},
+booktitle = {Proceedings of the Special Interest Group on Computer Graphics and Interactive Techniques Conference Courses},
+articleno = {7},
+numpages = {3},
+keywords = {Lattice Boltzmann Method, fluid simulation, physical simulation, GPU computing, real-time simulation, kinetic theory},
+location = {
+},
+series = {SIGGRAPH Courses '26}
+}
 ```
